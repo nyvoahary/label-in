@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Label-in · {{ root }}</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f242d;
+    --border: #2a3140;
+    --text: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #4f8cff;
+    --done: #22c55e;
+    --pending: #eab308;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  .sidebar { background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0; }
+  .sidebar header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  .sidebar header .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .project-picker { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .project-picker label { font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .05em; display: block; margin-bottom: 6px; }
+  .project-picker select { width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+  .progress { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .progress-bar { height: 4px; background: var(--panel-2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .progress-bar > div { height: 100%; background: var(--done); transition: width .2s; }
+  .filter { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; }
+  .filter button { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; }
+  .filter button.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .task-list { flex: 1; overflow-y: auto; }
+  .task-item { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+  .task-item:hover { background: var(--panel-2); }
+  .task-item.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 13px; }
+  .task-item .row1 { display: flex; justify-content: space-between; align-items: center; }
+  .task-item .idx { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .task-item .badge { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .badge.done { background: var(--done); }
+  .badge.pending { background: var(--pending); }
+  .task-item .preview { color: var(--muted); margin-top: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .toolbar { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;
+    align-items: center; background: var(--panel); }
+  .toolbar .spacer { flex: 1; }
+  .toolbar button, .toolbar a.btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; text-decoration: none; }
+  .toolbar button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .toolbar button:hover { border-color: var(--accent); }
+  .toolbar .meta { font-size: 12px; color: var(--muted); }
+
+  .content { flex: 1; padding: 24px 32px; overflow-y: auto; }
+  .meta-row { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-bottom: 14px; flex-wrap: wrap; }
+  .meta-row b { color: var(--text); font-weight: 500; }
+
+  .waveform-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; margin-bottom: 12px; }
+  #waveform { width: 100%; min-height: 96px; cursor: crosshair; }
+  .player-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .player-controls button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .player-controls button:hover { border-color: var(--accent); }
+  .player-controls button.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .player-controls .time { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+  .player-controls .sep { width: 1px; height: 18px; background: var(--border); }
+
+  .rates { display: flex; gap: 4px; margin-left: auto; align-items: center; font-size: 12px; color: var(--muted); }
+  .rates button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .rates button.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+  .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+    margin-bottom: 6px; margin-top: 14px; display: flex; justify-content: space-between; }
+  .prediction { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; font-size: 14px; margin-bottom: 6px; line-height: 1.5; color: var(--muted);
+    font-style: italic; }
+  textarea { width: 100%; min-height: 140px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 16px;
+    line-height: 1.5; font-family: inherit; resize: vertical; }
+  textarea:focus { outline: none; border-color: var(--accent); }
+
+  .actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  .actions .save { background: var(--accent); border-color: var(--accent); color: white; }
+  .actions button { padding: 9px 18px; font-size: 13px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--text); background: var(--panel-2); }
+  .actions .status { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .actions .status.saved { color: var(--done); }
+
+  .hints { margin-top: 28px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; }
+  .hints kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 3px;
+    padding: 1px 6px; font-size: 10px; font-family: ui-monospace, monospace; }
+  .empty { padding: 60px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <header>
+      <h1>Label-in</h1>
+      <div class="sub">{{ root }}</div>
+    </header>
+    <div class="project-picker">
+      <label>Project</label>
+      <select id="projectSelect"></select>
+    </div>
+    <div class="progress">
+      <div><span id="progressText">0 / 0 done</span></div>
+      <div class="progress-bar"><div id="progressFill" style="width:0"></div></div>
+    </div>
+    <div class="filter">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="pending">Pending</button>
+      <button data-filter="done">Done</button>
+    </div>
+    <div id="taskList" class="task-list"></div>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <button id="prevBtn">← Prev</button>
+      <button id="nextBtn">Next →</button>
+      <span class="meta" id="metaIdx">—</span>
+      <div class="spacer"></div>
+      <a class="btn" id="exportLink" href="#" target="_blank">Export JSON</a>
+    </div>
+    <div class="content" id="content">
+      <div class="empty">Loading…</div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import WaveSurfer from "{{ url_for('static', filename='wavesurfer/wavesurfer.esm.js') }}";
+import RegionsPlugin from "{{ url_for('static', filename='wavesurfer/plugins/regions.esm.js') }}";
+
+const state = {
+  projects: [],
+  project: null,
+  tasks: [],
+  current: null,
+  filter: "all",
+  ws: null,            // WaveSurfer instance
+  regions: null,       // Regions plugin instance
+  loopRegion: null,    // currently active region
+  loop: true,          // loop toggle
+  rate: 1,
+};
+
+const STORAGE_KEY = "labelin.lastProject";
+
+async function fetchProjects() {
+  const r = await fetch("/api/projects");
+  const j = await r.json();
+  state.projects = j.projects;
+  const sel = document.getElementById("projectSelect");
+  if (!state.projects.length) {
+    document.getElementById("content").innerHTML =
+      `<div class="empty">No projects found in <code>${j.root}</code>.<br>
+       Each project must be a subfolder containing a <code>*.label_studio.json</code>.</div>`;
+    sel.innerHTML = "<option>(none)</option>";
+    return;
+  }
+  sel.innerHTML = state.projects.map(p => {
+    const pct = p.total ? (p.done / p.total) * 100 : 0;
+    return `<option value="${p.name}">${p.name}  —  ${p.done}/${p.total} (${pct.toFixed(0)}%)</option>`;
+  }).join("");
+  const last = localStorage.getItem(STORAGE_KEY);
+  const initial = state.projects.find(p => p.name === last)?.name || state.projects[0].name;
+  sel.value = initial;
+  await switchProject(initial);
+  sel.onchange = () => switchProject(sel.value);
+}
+
+async function switchProject(name) {
+  state.project = name;
+  localStorage.setItem(STORAGE_KEY, name);
+  document.getElementById("exportLink").href = `/api/projects/${encodeURIComponent(name)}/export`;
+  await fetchTasks();
+}
+
+async function fetchTasks() {
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks`);
+  const j = await r.json();
+  state.tasks = j.tasks;
+  state.current = null;
+  renderSidebar();
+  if (state.tasks.length) {
+    const firstPending = state.tasks.find(t => t.status !== "done");
+    select((firstPending || state.tasks[0]).index);
+  } else {
+    document.getElementById("content").innerHTML = `<div class="empty">No tasks in this project.</div>`;
+  }
+}
+
+function renderSidebar() {
+  const list = document.getElementById("taskList");
+  const filtered = state.tasks.filter(t =>
+    state.filter === "all" ? true :
+    state.filter === "done" ? t.status === "done" :
+    t.status !== "done"
+  );
+  list.innerHTML = filtered.map(t => `
+    <div class="task-item ${t.index === state.current ? "active" : ""}" data-idx="${t.index}">
+      <div class="row1">
+        <span class="idx">#${String(t.index).padStart(4,"0")}</span>
+        <span class="badge ${t.status === "done" ? "done" : "pending"}"></span>
+      </div>
+      <div class="preview">${escapeHtml(t.annotation || t.prediction || "(no text)")}</div>
+    </div>
+  `).join("");
+  list.querySelectorAll(".task-item").forEach(el => {
+    el.addEventListener("click", () => select(parseInt(el.dataset.idx)));
+  });
+  const done = state.tasks.filter(t => t.status === "done").length;
+  const pct = state.tasks.length ? (done / state.tasks.length) * 100 : 0;
+  document.getElementById("progressText").textContent =
+    `${done} / ${state.tasks.length} done  ·  ${pct.toFixed(1)}%`;
+  document.getElementById("progressFill").style.width = pct + "%";
+  const sel = document.getElementById("projectSelect");
+  const opt = sel.querySelector(`option[value="${CSS.escape(state.project)}"]`);
+  if (opt) opt.textContent = `${state.project}  —  ${done}/${state.tasks.length} (${pct.toFixed(0)}%)`;
+}
+
+function teardownWavesurfer() {
+  if (state.ws) {
+    try { state.ws.destroy(); } catch (e) { /* ignore */ }
+  }
+  state.ws = null;
+  state.regions = null;
+  state.loopRegion = null;
+}
+
+function fmtTime(s) {
+  if (!isFinite(s)) return "—";
+  const m = Math.floor(s / 60);
+  const sec = (s - m * 60).toFixed(2).padStart(5, "0");
+  return `${m}:${sec}`;
+}
+
+function updateTimeDisplay() {
+  const el = document.getElementById("timeDisplay");
+  if (!el || !state.ws) return;
+  const cur = state.ws.getCurrentTime();
+  const dur = state.ws.getDuration();
+  let label = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+  if (state.loopRegion) {
+    label += `  ·  loop ${fmtTime(state.loopRegion.start)}–${fmtTime(state.loopRegion.end)}`;
+  } else if (state.loop) {
+    label += `  ·  loop full clip`;
+  }
+  el.textContent = label;
+}
+
+function setOrUpdateLoopRegion(start, end) {
+  if (!state.regions) return;
+  if (state.loopRegion) {
+    state.loopRegion.setOptions({ start, end });
+  } else {
+    const region = state.regions.addRegion({
+      start, end,
+      color: "rgba(79, 140, 255, 0.18)",
+      drag: true,
+      resize: true,
+    });
+    state.loopRegion = region;
+  }
+  updateTimeDisplay();
+  updateLoopButtonStates();
+}
+
+function clearLoop() {
+  if (state.loopRegion) {
+    try { state.loopRegion.remove(); } catch (e) { /* ignore */ }
+    state.loopRegion = null;
+  }
+  updateTimeDisplay();
+  updateLoopButtonStates();
+}
+
+function updateLoopButtonStates() {
+  const loopBtn = document.getElementById("loopBtn");
+  if (loopBtn) loopBtn.classList.toggle("active", state.loop);
+  // Also refresh the time display so the "loop full clip" hint appears/disappears.
+  updateTimeDisplay();
+}
+
+function initWavesurfer(audioUrl) {
+  teardownWavesurfer();
+  const ws = WaveSurfer.create({
+    container: "#waveform",
+    waveColor: "#4f8cff",
+    progressColor: "#2dd4bf",
+    cursorColor: "#e6e8ee",
+    cursorWidth: 1,
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 1,
+    height: 96,
+    normalize: true,
+    url: audioUrl,
+  });
+  state.ws = ws;
+
+  const regions = ws.registerPlugin(RegionsPlugin.create());
+  state.regions = regions;
+
+  // Drag on the empty waveform to create / replace the loop region.
+  regions.enableDragSelection({ color: "rgba(79, 140, 255, 0.18)" });
+
+  regions.on("region-created", (region) => {
+    // Only one loop region at a time.
+    regions.getRegions().forEach(r => { if (r !== region) r.remove(); });
+    state.loopRegion = region;
+    updateTimeDisplay();
+    updateLoopButtonStates();
+  });
+  regions.on("region-updated", (region) => {
+    state.loopRegion = region;
+    updateTimeDisplay();
+  });
+  regions.on("region-removed", (region) => {
+    if (state.loopRegion === region) state.loopRegion = null;
+    updateLoopButtonStates();
+  });
+
+  ws.on("ready", () => {
+    ws.setPlaybackRate(state.rate, true);
+    updateTimeDisplay();
+  });
+  ws.on("audioprocess", () => {
+    updateTimeDisplay();
+    if (state.loop && state.loopRegion) {
+      const t = ws.getCurrentTime();
+      if (t >= state.loopRegion.end - 0.01) {
+        ws.setTime(state.loopRegion.start);
+      }
+    }
+  });
+  ws.on("interaction", () => updateTimeDisplay());
+  ws.on("finish", () => {
+    if (!state.loop) return;
+    const start = state.loopRegion ? state.loopRegion.start : 0;
+    ws.setTime(start);
+    ws.play();
+  });
+}
+
+function select(idx) {
+  state.current = idx;
+  const t = state.tasks[idx];
+  if (!t) return;
+  document.getElementById("metaIdx").textContent =
+    `${state.project} · Task ${idx + 1} / ${state.tasks.length}`;
+  const dur = t.duration ? t.duration.toFixed(2) + "s" : "—";
+  const conf = t.confidence != null ? t.confidence.toFixed(3) : "—";
+  const audioUrl = `/audio/${encodeURIComponent(state.project)}/${encodeURIComponent(t.audio)}`;
+  document.getElementById("content").innerHTML = `
+    <div class="meta-row">
+      <span><b>${escapeHtml(t.audio)}</b></span>
+      <span>start: <b>${t.start ?? "—"}</b></span>
+      <span>end: <b>${t.end ?? "—"}</b></span>
+      <span>duration: <b>${dur}</b></span>
+      <span>confidence: <b>${conf}</b></span>
+    </div>
+    <div class="waveform-wrap">
+      <div id="waveform"></div>
+      <div class="player-controls">
+        <button id="playBtn">▶ Play</button>
+        <button id="restartBtn" title="Restart from start (or loop start)">⟲ Restart</button>
+        <span class="sep"></span>
+        <button id="loopStartBtn" title="Set loop start at playhead ([)">[ Loop start</button>
+        <button id="loopEndBtn" title="Set loop end at playhead (])">Loop end ]</button>
+        <button id="loopBtn" class="${state.loop ? "active" : ""}" title="Toggle loop (L)">↻ Loop</button>
+        <button id="clearLoopBtn" title="Clear loop region (\\)">✕ Clear</button>
+        <span class="sep"></span>
+        <span class="time" id="timeDisplay">0:00.00 / —</span>
+        <div class="rates">
+          ${[0.5, 0.75, 1, 1.25, 1.5].map(r =>
+            `<button data-rate="${r}" class="${r === state.rate ? "active" : ""}">${r}×</button>`
+          ).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="label"><span>Prediction</span>
+      <button id="copyPred" style="background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:11px;">Copy ↓</button>
+    </div>
+    <div class="prediction">${escapeHtml(t.prediction || "(empty)")}</div>
+    <div class="label">Annotation</div>
+    <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" ? "" : t.prediction) || "")}</textarea>
+    <div class="actions">
+      <button class="save" id="saveBtn">Save & Next</button>
+      <button id="skipBtn">Skip →</button>
+      <button id="markPending">Mark Pending</button>
+      <span class="status" id="saveStatus">${t.status === "done" ? "✓ saved" : ""}</span>
+    </div>
+    <div class="hints">
+      <kbd>Ctrl</kbd>+<kbd>Enter</kbd> Save & Next ·
+      <kbd>Tab</kbd>/<kbd>Shift+Tab</kbd> Next/Prev ·
+      <kbd>Space</kbd> Play/Pause ·
+      <kbd>R</kbd> Restart ·
+      <kbd>[</kbd>/<kbd>]</kbd> Set loop start/end ·
+      <kbd>L</kbd> Toggle loop ·
+      <kbd>\\</kbd> Clear loop ·
+      <kbd>Ctrl</kbd>+<kbd>D</kbd> Copy prediction
+      <br><span style="color:var(--muted)">Tip: drag on the waveform to draw a loop region.</span>
+    </div>
+  `;
+
+  initWavesurfer(audioUrl);
+
+  const ta = document.getElementById("annotation");
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  document.getElementById("playBtn").onclick = () => state.ws?.playPause();
+  document.getElementById("restartBtn").onclick = () => {
+    if (!state.ws) return;
+    const start = state.loop && state.loopRegion ? state.loopRegion.start : 0;
+    state.ws.setTime(start);
+    state.ws.play();
+  };
+  document.getElementById("loopStartBtn").onclick = () => setLoopStartAtPlayhead();
+  document.getElementById("loopEndBtn").onclick = () => setLoopEndAtPlayhead();
+  document.getElementById("loopBtn").onclick = () => {
+    state.loop = !state.loop;
+    updateLoopButtonStates();
+  };
+  document.getElementById("clearLoopBtn").onclick = () => clearLoop();
+
+  document.querySelectorAll(".rates button").forEach(b => {
+    b.onclick = () => {
+      state.rate = parseFloat(b.dataset.rate);
+      state.ws?.setPlaybackRate(state.rate, true);
+      document.querySelectorAll(".rates button").forEach(x => x.classList.toggle("active", x === b));
+    };
+  });
+  document.getElementById("copyPred").onclick = () => {
+    ta.value = t.prediction || "";
+    ta.focus();
+  };
+  document.getElementById("saveBtn").onclick = () => save(true);
+  document.getElementById("skipBtn").onclick = () => goto(idx + 1);
+  document.getElementById("markPending").onclick = () => save(false, "pending");
+
+  if (state.ws) {
+    state.ws.on("play", () => { document.getElementById("playBtn").textContent = "⏸ Pause"; });
+    state.ws.on("pause", () => { document.getElementById("playBtn").textContent = "▶ Play"; });
+  }
+
+  renderSidebar();
+  scrollSidebarToCurrent();
+}
+
+function setLoopStartAtPlayhead() {
+  if (!state.ws) return;
+  const t = state.ws.getCurrentTime();
+  const dur = state.ws.getDuration();
+  if (state.loopRegion) {
+    const end = Math.max(t + 0.05, state.loopRegion.end);
+    setOrUpdateLoopRegion(t, end);
+  } else {
+    setOrUpdateLoopRegion(t, Math.min(dur, t + 1));
+  }
+}
+
+function setLoopEndAtPlayhead() {
+  if (!state.ws) return;
+  const t = state.ws.getCurrentTime();
+  if (state.loopRegion) {
+    const start = Math.min(t - 0.05, state.loopRegion.start);
+    setOrUpdateLoopRegion(Math.max(0, start), t);
+  } else {
+    setOrUpdateLoopRegion(Math.max(0, t - 1), t);
+  }
+}
+
+function scrollSidebarToCurrent() {
+  const el = document.querySelector(".task-item.active");
+  if (el) el.scrollIntoView({ block: "nearest" });
+}
+
+async function save(advance, statusOverride) {
+  const ta = document.getElementById("annotation");
+  if (!ta) return;
+  const text = ta.value.trim();
+  const status = statusOverride || (text ? "done" : "pending");
+  const idx = state.current;
+  document.getElementById("saveStatus").textContent = "saving…";
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, status }),
+  });
+  const j = await r.json();
+  if (j.ok) {
+    state.tasks[idx].annotation = text;
+    state.tasks[idx].status = status;
+    document.getElementById("saveStatus").textContent = "✓ saved";
+    document.getElementById("saveStatus").classList.add("saved");
+    renderSidebar();
+    if (advance) goto(idx + 1);
+  } else {
+    document.getElementById("saveStatus").textContent = "save failed";
+  }
+}
+
+function goto(idx) {
+  if (idx < 0 || idx >= state.tasks.length) return;
+  select(idx);
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  })[c]);
+}
+
+document.querySelectorAll(".filter button").forEach(b => {
+  b.onclick = () => {
+    state.filter = b.dataset.filter;
+    document.querySelectorAll(".filter button").forEach(x =>
+      x.classList.toggle("active", x === b));
+    renderSidebar();
+  };
+});
+document.getElementById("prevBtn").onclick = () => goto(state.current - 1);
+document.getElementById("nextBtn").onclick = () => goto(state.current + 1);
+
+document.addEventListener("keydown", (e) => {
+  const ta = document.getElementById("annotation");
+  if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); save(true); return; }
+  if (e.ctrlKey && (e.key === "d" || e.key === "D")) {
+    e.preventDefault();
+    if (ta) ta.value = state.tasks[state.current]?.prediction || "";
+    return;
+  }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    goto(state.current + (e.shiftKey ? -1 : 1));
+    return;
+  }
+  if (document.activeElement === ta) return;
+  if (e.key === " ") {
+    e.preventDefault();
+    state.ws?.playPause();
+  } else if (e.key === "r" || e.key === "R") {
+    if (!state.ws) return;
+    const start = state.loop && state.loopRegion ? state.loopRegion.start : 0;
+    state.ws.setTime(start);
+    state.ws.play();
+  } else if (e.key === "[") {
+    setLoopStartAtPlayhead();
+  } else if (e.key === "]") {
+    setLoopEndAtPlayhead();
+  } else if (e.key === "l" || e.key === "L") {
+    state.loop = !state.loop;
+    updateLoopButtonStates();
+  } else if (e.key === "\\") {
+    clearLoop();
+  }
+});
+
+fetchProjects();
+</script>
+</body>
+</html>
