@@ -84,15 +84,26 @@ def task_audio(task: dict) -> str:
     return task.get("data", {}).get("audio", "")
 
 
-def prediction_text(task: dict) -> str:
+def all_predictions(task: dict) -> list[dict]:
+    """Return [{model, score, text}, ...] for every prediction in the task."""
     preds = task.get("predictions") or []
-    if preds:
-        result = preds[0].get("result") or []
-        if result:
-            texts = result[0].get("value", {}).get("text") or []
+    out = []
+    for p in preds:
+        model = p.get("model_version") or "unknown"
+        score = p.get("score")
+        text = ""
+        for r in (p.get("result") or []):
+            texts = (r.get("value") or {}).get("text") or []
             if texts:
-                return texts[0]
-    return task.get("data", {}).get("text", "") or ""
+                text = texts[0]
+                break
+        if text:
+            out.append({"model": model, "score": score, "text": text})
+    if not out:
+        fallback = task.get("data", {}).get("text", "") or ""
+        if fallback:
+            out.append({"model": "default", "score": None, "text": fallback})
+    return out
 
 
 @app.route("/")
@@ -126,13 +137,15 @@ def api_tasks(name: str):
         d = t.get("data", {})
         audio = d.get("audio", "")
         anno = annos.get(audio)
+        preds = all_predictions(t)
         out.append({
             "index": i,
             "audio": audio,
             "start": d.get("start"),
             "end": d.get("end"),
             "duration": (d.get("end") or 0) - (d.get("start") or 0),
-            "prediction": prediction_text(t),
+            "predictions": preds,
+            "prediction": preds[0]["text"] if preds else "",  # sidebar preview
             "confidence": d.get("confidence"),
             "annotation": (anno or {}).get("text", ""),
             "status": (anno or {}).get("status", "pending"),

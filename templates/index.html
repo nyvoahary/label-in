@@ -81,9 +81,19 @@
 
   .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
     margin-bottom: 6px; margin-top: 14px; display: flex; justify-content: space-between; }
+  .predictions-row { display: flex; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
   .prediction { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 12px 14px; font-size: 14px; margin-bottom: 6px; line-height: 1.5; color: var(--muted);
-    font-style: italic; }
+    padding: 12px 14px; font-size: 14px; line-height: 1.5; color: var(--muted);
+    font-style: italic; user-select: text; flex: 1; min-width: 180px; }
+  .prediction .pred-header { display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-style: normal; }
+  .prediction .pred-model { font-size: 11px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
+  .prediction .pred-score { font-size: 11px; color: var(--muted); }
+  .prediction .pred-copy { background: transparent; border: none; color: var(--accent);
+    cursor: pointer; font-size: 11px; padding: 0; font-style: normal; }
+  .pred-word { cursor: pointer; border-radius: 3px; padding: 1px 0; }
+  .pred-word:hover { background: rgba(79,140,255,0.25); color: var(--text); }
   textarea { width: 100%; min-height: 140px; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 16px;
     line-height: 1.5; font-family: inherit; resize: vertical; }
@@ -157,6 +167,64 @@ const state = {
 };
 
 const STORAGE_KEY = "labelin.lastProject";
+
+// Cursor position saved from the annotation textarea before it loses focus.
+let savedCursor = 0;
+
+function trackCursor(ta) {
+  const save = () => { savedCursor = ta.selectionStart; };
+  ta.addEventListener("keyup", save);
+  ta.addEventListener("click", save);
+  ta.addEventListener("mouseup", save);
+  ta.addEventListener("blur", save);
+}
+
+function insertPredictionText(word) {
+  const ta = document.getElementById("annotation");
+  if (!ta) return;
+  const text = ta.value;
+  const pos = savedCursor;
+  let start = pos;
+  let end = pos;
+  // Expand outward to word boundaries (non-whitespace chars).
+  while (start > 0 && /\S/.test(text[start - 1])) start--;
+  while (end < text.length && /\S/.test(text[end])) end++;
+  const newText = text.slice(0, start) + word + text.slice(end);
+  ta.value = newText;
+  const newPos = start + word.length;
+  ta.focus();
+  ta.setSelectionRange(newPos, newPos);
+  savedCursor = newPos;
+}
+
+function setupPredictionWords(container) {
+  if (!container) return;
+  container.querySelectorAll(".pred-body").forEach(predEl => {
+    const raw = predEl.dataset.raw || "";
+    if (!raw) return;
+    const tokens = raw.split(/(\s+)/);
+    predEl.innerHTML = tokens.map(tok => {
+      if (/^\s+$/.test(tok)) return escapeHtml(tok);
+      return `<span class="pred-word" data-word="${escapeHtml(tok)}">${escapeHtml(tok)}</span>`;
+    }).join("");
+
+    let pendingSelection = null;
+
+    predEl.addEventListener("mousedown", () => { pendingSelection = null; });
+    predEl.addEventListener("mouseup", () => {
+      const sel = window.getSelection();
+      if (sel && sel.toString().trim()) pendingSelection = sel.toString().trim();
+    });
+    predEl.querySelectorAll(".pred-word").forEach(span => {
+      span.addEventListener("mousedown", e => e.preventDefault());
+      span.addEventListener("click", () => {
+        const word = pendingSelection || span.dataset.word;
+        pendingSelection = null;
+        insertPredictionText(word);
+      });
+    });
+  });
+}
 
 async function fetchProjects() {
   const r = await fetch("/api/projects");
@@ -391,10 +459,19 @@ function select(idx) {
         </div>
       </div>
     </div>
-    <div class="label"><span>Prediction</span>
-      <button id="copyPred" style="background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:11px;">Copy ↓</button>
+    <div class="label"><span>Predictions</span></div>
+    <div class="predictions-row" id="predictionsRow">
+      ${(t.predictions && t.predictions.length ? t.predictions : [{model:"default",score:null,text:t.prediction||""}]).map((p, pi) => `
+        <div class="prediction" data-pred-index="${pi}">
+          <div class="pred-header">
+            <span class="pred-model" title="${escapeHtml(p.model)}">${escapeHtml(p.model)}</span>
+            <span class="pred-score">${p.score != null ? p.score.toFixed(3) : "—"}</span>
+            <button class="pred-copy" data-pred-index="${pi}">Copy ↓</button>
+          </div>
+          <div class="pred-body" data-raw="${escapeHtml(p.text)}">${escapeHtml(p.text || "(empty)")}</div>
+        </div>
+      `).join("")}
     </div>
-    <div class="prediction">${escapeHtml(t.prediction || "(empty)")}</div>
     <div class="label">Annotation</div>
     <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" ? "" : t.prediction) || "")}</textarea>
     <div class="actions">
@@ -412,7 +489,7 @@ function select(idx) {
       <kbd>L</kbd> Toggle loop ·
       <kbd>\\</kbd> Clear loop ·
       <kbd>Ctrl</kbd>+<kbd>D</kbd> Copy prediction
-      <br><span style="color:var(--muted)">Tip: drag on the waveform to draw a loop region.</span>
+      <br><span style="color:var(--muted)">Tip: drag on the waveform to draw a loop region. Click a word in the prediction to replace the word at your cursor; select multiple words then click to insert the selection.</span>
     </div>
   `;
 
@@ -421,6 +498,9 @@ function select(idx) {
   const ta = document.getElementById("annotation");
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
+  savedCursor = ta.value.length;
+  trackCursor(ta);
+  setupPredictionWords(document.getElementById("predictionsRow"));
 
   document.getElementById("playBtn").onclick = () => state.ws?.playPause();
   document.getElementById("restartBtn").onclick = () => {
@@ -444,10 +524,17 @@ function select(idx) {
       document.querySelectorAll(".rates button").forEach(x => x.classList.toggle("active", x === b));
     };
   });
-  document.getElementById("copyPred").onclick = () => {
-    ta.value = t.prediction || "";
-    ta.focus();
-  };
+  document.querySelectorAll(".pred-copy").forEach(btn => {
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.onclick = () => {
+      const pi = parseInt(btn.dataset.predIndex);
+      const pred = (t.predictions && t.predictions[pi]) || {text: t.prediction || ""};
+      ta.value = pred.text || "";
+      ta.focus();
+      savedCursor = ta.value.length;
+      ta.setSelectionRange(savedCursor, savedCursor);
+    };
+  });
   document.getElementById("saveBtn").onclick = () => save(true);
   document.getElementById("skipBtn").onclick = () => goto(idx + 1);
   document.getElementById("markPending").onclick = () => save(false, "pending");
@@ -541,7 +628,8 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); save(true); return; }
   if (e.ctrlKey && (e.key === "d" || e.key === "D")) {
     e.preventDefault();
-    if (ta) ta.value = state.tasks[state.current]?.prediction || "";
+    const cur = state.tasks[state.current];
+    if (ta) ta.value = (cur?.predictions?.[0]?.text) || cur?.prediction || "";
     return;
   }
   if (e.key === "Tab") {
