@@ -45,6 +45,7 @@
   .task-item .badge { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .badge.done { background: var(--done); }
   .badge.pending { background: var(--pending); }
+  .badge.review { background: #ef4444; }
   .task-item .preview { color: var(--muted); margin-top: 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -136,6 +137,7 @@
       <button data-filter="all" class="active">All</button>
       <button data-filter="pending">Pending</button>
       <button data-filter="done">Done</button>
+      <button data-filter="review">Review</button>
     </div>
     <div id="taskList" class="task-list"></div>
   </aside>
@@ -280,13 +282,14 @@ function renderSidebar() {
   const filtered = state.tasks.filter(t =>
     state.filter === "all" ? true :
     state.filter === "done" ? t.status === "done" :
+    state.filter === "review" ? t.status === "review" :
     t.status !== "done"
   );
   list.innerHTML = filtered.map(t => `
     <div class="task-item ${t.index === state.current ? "active" : ""}" data-idx="${t.index}">
       <div class="row1">
         <span class="idx">#${String(t.index).padStart(4,"0")}</span>
-        <span class="badge ${t.status === "done" ? "done" : "pending"}"></span>
+        <span class="badge ${t.status}"></span>
       </div>
       <div class="preview">${escapeHtml(t.annotation || t.prediction || "(no text)")}</div>
     </div>
@@ -483,6 +486,7 @@ function select(idx) {
       <button class="save" id="saveBtn">Save & Next</button>
       <button id="skipBtn">Skip →</button>
       <button id="markPending">Mark Pending</button>
+      <button id="markReview">Mark for Review</button>
       <span class="status" id="saveStatus">${t.status === "done" ? "✓ saved" : ""}</span>
     </div>
     <div class="hints">
@@ -543,6 +547,7 @@ function select(idx) {
   document.getElementById("saveBtn").onclick = () => save(true);
   document.getElementById("skipBtn").onclick = () => goto(idx + 1);
   document.getElementById("markPending").onclick = () => save(false, "pending");
+  document.getElementById("markReview").onclick = () => save(false, "review");
 
   if (state.ws) {
     state.ws.on("play", () => { document.getElementById("playBtn").textContent = "⏸ Pause"; });
