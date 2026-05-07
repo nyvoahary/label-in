@@ -118,10 +118,12 @@ def api_projects():
         tasks = load_tasks(p)
         annos = load_annotations(p)
         done = sum(1 for a in annos.values() if a.get("status") == "done")
+        review = sum(1 for a in annos.values() if a.get("status") in ("review", "autosave"))
         out.append({
             "name": p["name"],
             "total": len(tasks),
             "done": done,
+            "review": review,
             "tasks_file": p["tasks_file"].name,
         })
     return jsonify({"projects": out, "root": str(DATA_ROOT)})

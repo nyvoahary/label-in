@@ -31,7 +31,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   .logo { filter: invert(1); transition: filter .2s ease; }
   .light-theme .logo { filter: none; }
-  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  .app { display: grid; grid-template-columns: 400px 1fr; height: 100vh; }
   .sidebar { background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; min-height: 0; }
   .sidebar header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
@@ -59,6 +59,7 @@
   .badge.done { background: var(--done); }
   .badge.pending { background: var(--pending); }
   .badge.review { background: #ef4444; }
+  .badge.autosave { background: #90D6FF; }
   .task-item .preview { color: var(--muted); margin-top: 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -105,7 +106,8 @@
   .predictions-row { display: flex; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
   .prediction { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
     padding: 12px 14px; font-size: 14px; line-height: 1.5; color: var(--muted);
-    font-style: italic; user-select: text; flex: 1; min-width: 180px; }
+    font-style: italic; user-select: text; flex: 1; min-width: 180px;
+    overflow-wrap: break-word; word-break: break-word; }
   .prediction .pred-header { display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 8px; font-style: normal; }
   .prediction .pred-model { font-size: 11px; font-weight: 600; color: var(--text);
@@ -126,6 +128,7 @@
     border: 1px solid var(--border); color: var(--text); background: var(--panel-2); }
   .actions .status { margin-left: auto; font-size: 12px; color: var(--muted); }
   .actions .status.saved { color: var(--done); }
+  .actions .status.autosaved { color: #90D6FF; }
 
   .hints { margin-top: 28px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; }
   .hints kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 3px;
@@ -153,7 +156,7 @@
       <button data-filter="all" class="active">All</button>
       <button data-filter="pending">Pending</button>
       <button data-filter="done">Done</button>
-      <button data-filter="review">Review</button>
+      <button data-filter="review">Review <span id="reviewCount"></span></button>
     </div>
     <div id="taskList" class="task-list"></div>
   </aside>
@@ -183,11 +186,12 @@ const state = {
   tasks: [],
   current: null,
   filter: "all",
-  ws: null,            // WaveSurfer instance
-  regions: null,       // Regions plugin instance
-  loopRegion: null,    // currently active region
-  loop: true,          // loop toggle
+  ws: null,
+  regions: null,
+  loopRegion: null,
+  loop: true,
   rate: 1,
+  saveTimer: null,
 };
 
 const STORAGE_KEY = "labelin.lastProject";
@@ -299,7 +303,7 @@ function renderSidebar() {
   const filtered = state.tasks.filter(t =>
     state.filter === "all" ? true :
     state.filter === "done" ? t.status === "done" :
-    state.filter === "review" ? t.status === "review" :
+    state.filter === "review" ? (t.status === "review" || t.status === "autosave") :
     t.status !== "done"
   );
   list.innerHTML = filtered.map(t => `
@@ -322,6 +326,9 @@ function renderSidebar() {
   const sel = document.getElementById("projectSelect");
   const opt = sel.querySelector(`option[value="${CSS.escape(state.project)}"]`);
   if (opt) opt.textContent = `${state.project}  —  ${done}/${state.tasks.length} (${pct.toFixed(0)}%)`;
+  const reviewCount = state.tasks.filter(t => t.status === "review" || t.status === "autosave").length;
+  const rc = document.getElementById("reviewCount");
+  if (rc) rc.textContent = reviewCount ? `(${reviewCount})` : "";
 }
 
 function teardownWavesurfer() {
@@ -566,6 +573,11 @@ function select(idx) {
   document.getElementById("markPending").onclick = () => save(false, "pending");
   document.getElementById("markReview").onclick = () => save(false, "review");
 
+  ta.addEventListener("input", () => {
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(() => autoSave(), 1500);
+  });
+
   if (state.ws) {
     state.ws.on("play", () => { document.getElementById("playBtn").textContent = "⏸ Pause"; });
     state.ws.on("pause", () => { document.getElementById("playBtn").textContent = "▶ Play"; });
@@ -603,7 +615,29 @@ function scrollSidebarToCurrent() {
   if (el) el.scrollIntoView({ block: "nearest" });
 }
 
+async function autoSave() {
+  const ta = document.getElementById("annotation");
+  if (!ta) return;
+  const text = ta.value.trim();
+  const status = "autosave";
+  const idx = state.current;
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, status }),
+  });
+  const j = await r.json();
+  if (j.ok) {
+    state.tasks[idx].annotation = text;
+    state.tasks[idx].status = status;
+    document.getElementById("saveStatus").textContent = "✓ auto-saved";
+    document.getElementById("saveStatus").classList.add("autosaved");
+    renderSidebar();
+  }
+}
+
 async function save(advance, statusOverride) {
+  clearTimeout(state.saveTimer);
   const ta = document.getElementById("annotation");
   if (!ta) return;
   const text = ta.value.trim();
