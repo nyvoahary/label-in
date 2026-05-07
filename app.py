@@ -156,6 +156,56 @@ def api_tasks(name: str):
     return jsonify({"project": name, "tasks": out, "count": len(out)})
 
 
+@app.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html", root=DATA_ROOT.name)
+
+
+@app.route("/api/dashboard")
+def api_dashboard():
+    projects = []
+    total_tasks = 0
+    total_done = 0
+    total_pending = 0
+    total_review = 0
+    total_autosave = 0
+    for p in discover_projects():
+        tasks = load_tasks(p)
+        annos = load_annotations(p)
+        done = sum(1 for a in annos.values() if a.get("status") == "done")
+        review = sum(1 for a in annos.values() if a.get("status") == "review")
+        autosave = sum(1 for a in annos.values() if a.get("status") == "autosave")
+        pending = len(tasks) - done - review - autosave
+        total_tasks += len(tasks)
+        total_done += done
+        total_review += review
+        total_autosave += autosave
+        total_pending += pending
+        completion = (done / len(tasks) * 100) if tasks else 0
+        projects.append({
+            "name": p["name"],
+            "total": len(tasks),
+            "done": done,
+            "pending": pending,
+            "review": review,
+            "autosave": autosave,
+            "completion": round(completion, 1),
+        })
+    overall_completion = (total_done / total_tasks * 100) if total_tasks else 0
+    return jsonify({
+        "overall": {
+            "projects": len(projects),
+            "tasks": total_tasks,
+            "done": total_done,
+            "pending": total_pending,
+            "review": total_review,
+            "autosave": total_autosave,
+            "completion": round(overall_completion, 1),
+        },
+        "projects": projects,
+    })
+
+
 @app.route("/api/projects/<name>/tasks/<int:idx>", methods=["POST"])
 def api_save(name: str, idx: int):
     project = get_project(name)

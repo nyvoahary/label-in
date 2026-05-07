@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Dashboard · Label-in · {{ root }}</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f242d;
+    --border: #2a3140;
+    --text: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #f59e0b;
+    --done: #22c55e;
+    --pending: #eab308;
+    --review: #ef4444;
+    --autosave: #90D6FF;
+  }
+  .light-theme {
+    --bg: #f7f8fb;
+    --panel: #ffffff;
+    --panel-2: #f3f6fb;
+    --border: #d9e2ec;
+    --text: #111827;
+    --muted: #6b7280;
+    --accent: #f59e0b;
+    --done: #22c55e;
+    --pending: #eab308;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+
+  .toolbar { padding: 10px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;
+    align-items: center; background: var(--panel); }
+  .toolbar .logo { filter: invert(1); height: 32px; margin-right: 6px; transition: filter .2s ease; }
+  .light-theme .toolbar .logo { filter: none; }
+  .toolbar h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .toolbar .sub { font-size: 11px; color: var(--muted); margin-left: 4px; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar a, .toolbar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; text-decoration: none; }
+  .toolbar a:hover, .toolbar button:hover { border-color: var(--accent); }
+  .toolbar .theme-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; padding: 6px;
+    transition: transform .15s ease, background .15s ease, border-color .15s ease, color .15s ease; overflow: hidden; }
+  .toolbar .theme-btn:hover { transform: scale(1.05); border-color: var(--accent); background: rgba(255,255,255,0.08); }
+  .toolbar .theme-btn:active { transform: scale(0.98); background: rgba(255,255,255,0.14); }
+  .light-theme .toolbar .theme-btn:hover { background: rgba(0,0,0,0.05); }
+  .light-theme .toolbar .theme-btn:active { background: rgba(0,0,0,0.1); }
+  .toolbar .theme-btn.animating { animation: icon-slide 240ms ease; }
+  @keyframes icon-slide { 0% { opacity: 0; transform: translateY(12px); } 100% { opacity: 1; transform: translateY(0); } }
+
+  .container { max-width: 1080px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 36px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 16px; text-align: center; }
+  .stat-card .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .05em; margin-top: 6px; }
+  .stat-card.accent .value { color: var(--accent); }
+  .stat-card.done .value { color: var(--done); }
+  .stat-card.pending .value { color: var(--pending); }
+  .stat-card.review .value { color: var(--review); }
+  .stat-card.autosave .value { color: var(--autosave); }
+
+  .overall-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 36px; }
+  .overall-bar .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .overall-bar .top .pct { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .overall-bar .top .pct-label { font-size: 12px; color: var(--muted); }
+  .bar-track { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .bar-track .bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+
+  .section-title { font-size: 13px; font-weight: 600; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px; }
+  .section-title span { color: var(--muted); font-weight: 400; font-size: 12px; }
+
+  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .project-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px; cursor: pointer; transition: border-color .15s, transform .15s; }
+  .project-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .project-card .name { font-size: 14px; font-weight: 600; margin-bottom: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-card .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .project-card .stat-item { text-align: center; }
+  .project-card .stat-item .num { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .project-card .stat-item .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; margin-top: 2px; }
+  .project-card .stat-item.done .num { color: var(--done); }
+  .project-card .stat-item.pending .num { color: var(--pending); }
+  .project-card .stat-item.review .num { color: var(--review); }
+  .project-card .stat-item.autosave .num { color: var(--autosave); }
+  .project-card .prog-row { display: flex; align-items: center; gap: 10px; }
+  .project-card .prog-row .bar-track { flex: 1; }
+  .project-card .prog-row .pct { font-size: 13px; font-weight: 600;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .project-card .prog-row .pct.accent { color: var(--accent); }
+  .project-card .prog-row .pct.done { color: var(--done); }
+
+  .empty-state { padding: 80px 20px; text-align: center; color: var(--muted); }
+  .empty-state h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  .empty-state p { font-size: 13px; margin: 0; }
+
+  @media (max-width: 700px) {
+    .stats-grid { grid-template-columns: repeat(3, 1fr); }
+    .project-grid { grid-template-columns: 1fr; }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <img src="/static/logo.png" alt="Logo" class="logo">
+  <h1>Dashboard</h1>
+  <span class="sub">{{ root }}</span>
+  <div class="spacer"></div>
+  <a href="/" id="backLink">← Back to labeling</a>
+  <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
+</div>
+
+<div class="container" id="app">
+  <div class="empty-state">
+    <h2>Loading…</h2>
+    <p>Fetching dashboard data.</p>
+  </div>
+</div>
+
+<script>
+const state = { projects: [], overall: null };
+
+async function load() {
+  const r = await fetch("/api/dashboard");
+  const j = await r.json();
+  state.overall = j.overall;
+  state.projects = j.projects;
+  render();
+}
+
+function render() {
+  const o = state.overall;
+  if (!o || !o.projects) {
+    document.getElementById("app").innerHTML =
+      `<div class="empty-state"><h2>No data</h2><p>No projects found.</p></div>`;
+    return;
+  }
+
+  const barColor = o.completion >= 100 ? "var(--done)" : "var(--accent)";
+
+  document.getElementById("app").innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card accent">
+        <div class="value">${o.projects}</div>
+        <div class="label">Projects</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">${o.tasks}</div>
+        <div class="label">Total Tasks</div>
+      </div>
+      <div class="stat-card done">
+        <div class="value">${o.done}</div>
+        <div class="label">Done</div>
+      </div>
+      <div class="stat-card pending">
+        <div class="value">${o.pending}</div>
+        <div class="label">Pending</div>
+      </div>
+      <div class="stat-card review">
+        <div class="value">${o.review}</div>
+        <div class="label">Review</div>
+      </div>
+      <div class="stat-card autosave">
+        <div class="value">${o.autosave}</div>
+        <div class="label">Auto-saved</div>
+      </div>
+    </div>
+
+    <div class="overall-bar">
+      <div class="top">
+        <div><span class="pct-label">Overall completion</span></div>
+        <div><span class="pct">${o.completion}%</span></div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${o.completion}%;background:${barColor}"></div>
+      </div>
+    </div>
+
+    <div class="section-title">
+      Projects
+      <span>(${state.projects.length})</span>
+    </div>
+
+    <div class="project-grid">
+      ${state.projects.map(p => {
+        const pct = p.completion;
+        const pctColor = pct >= 100 ? "done" : "accent";
+        return `
+          <div class="project-card" data-name="${esc(p.name)}">
+            <div class="name">${esc(p.name)}</div>
+            <div class="stats">
+              <div class="stat-item done">
+                <div class="num">${p.done}</div>
+                <div class="lbl">Done</div>
+              </div>
+              <div class="stat-item pending">
+                <div class="num">${p.pending}</div>
+                <div class="lbl">Pending</div>
+              </div>
+              <div class="stat-item review">
+                <div class="num">${p.review}</div>
+                <div class="lbl">Review</div>
+              </div>
+              <div class="stat-item autosave">
+                <div class="num">${p.autosave}</div>
+                <div class="lbl">Auto-save</div>
+              </div>
+            </div>
+            <div class="prog-row">
+              <div class="bar-track">
+                <div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div>
+              </div>
+              <span class="pct ${pctColor}">${pct}%</span>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+
+  document.querySelectorAll(".project-card").forEach(el => {
+    el.addEventListener("click", () => {
+      const name = el.dataset.name;
+      localStorage.setItem("labelin.lastProject", name);
+      window.location.href = "/";
+    });
+  });
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  })[c]);
+}
+
+function setTheme(theme) {
+  const isLight = theme === "light";
+  document.documentElement.classList.toggle("light-theme", isLight);
+  const btn = document.getElementById("themeBtn");
+  if (btn) btn.textContent = isLight ? "🌙" : "☀️";
+  localStorage.setItem("labelin.theme", theme);
+}
+
+function toggleTheme() {
+  const btn = document.getElementById("themeBtn");
+  if (btn) {
+    btn.classList.add("animating");
+    btn.addEventListener("animationend", () => btn.classList.remove("animating"), { once: true });
+  }
+  setTheme(document.documentElement.classList.contains("light-theme") ? "dark" : "light");
+}
+
+document.getElementById("themeBtn").onclick = toggleTheme;
+
+const savedTheme = localStorage.getItem("labelin.theme");
+setTheme(savedTheme === "light" ? "light" : "dark");
+
+load();
+</script>
+</body>
+</html>
