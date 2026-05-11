@@ -11,4 +11,6 @@ if not exist ".venv" (
 call .venv\Scripts\activate.bat
 pip install -q -r requirements.txt
 
+set BACKUP_ROOT=\\192.168.88.26\transcription
+
 python app.py %*
