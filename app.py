@@ -12,6 +12,7 @@ Defaults to the directory containing this file. Open http://127.0.0.1:5000
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -263,6 +264,8 @@ def api_backup(name: str):
     src = project["annotations_file"]
     if not src.exists():
         return jsonify({"error": "No annotations file found"}), 404
+    if BACKUP_ROOT is None:
+        return jsonify({"error": "BACKUP_ROOT not configured"}), 503
     if not BACKUP_ROOT.exists():
         return jsonify({"error": "Backup destination not accessible"}), 503
     dest_dir = BACKUP_ROOT / name
@@ -300,6 +303,8 @@ def _merge_annotations(local: dict, remote: dict) -> tuple[dict, int, int]:
 def api_sync(name: str):
     project = get_project(name)
     local_path = project["annotations_file"]
+    if BACKUP_ROOT is None:
+        return jsonify({"error": "BACKUP_ROOT not configured"}), 503
     if not BACKUP_ROOT.exists():
         return jsonify({"error": "NAS not accessible"}), 503
     nas_path = BACKUP_ROOT / name / "annotations.json"
