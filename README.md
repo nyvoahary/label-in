@@ -14,6 +14,8 @@ A lightweight, local Label-Studio-style web app for transcribing audio clips. Po
 - **Atomic JSON persistence** — annotations saved to `annotations.json` inside each project folder; the original `*.label_studio.json` is never modified.
 - **Label-Studio-compatible export** at `/api/projects/<name>/export` (merges edits into the original task structure as `annotations`).
 - **Auto-resume** — on switching projects, jumps to the first pending task.
+- **Backup to NAS** — one-click backup of `annotations.json` to a network share (SMB/CIFS).
+- **Sync from NAS** — per-task merge of NAS annotations into local; newer `updated_at` wins per task, so work done on two machines on different tasks is safely combined. A `.bak` of the local file is saved before any overwrite.
 
 ## Project layout
 
@@ -158,7 +160,29 @@ Each project's `annotations.json` is keyed by audio filename:
 | `GET` | `/api/projects/<name>/tasks` | List tasks, merged with annotations |
 | `POST` | `/api/projects/<name>/tasks/<idx>` | Save annotation `{ text, status? }` |
 | `GET` | `/api/projects/<name>/export` | Tasks + annotations in Label Studio format |
+| `POST` | `/api/projects/<name>/backup` | Copy `annotations.json` to NAS |
+| `POST` | `/api/projects/<name>/sync` | Merge NAS annotations into local (per-task, newer wins) |
 | `GET` | `/audio/<name>/<filename>` | Serves audio from the project folder |
+
+## NAS backup & sync
+
+The app can back up and sync `annotations.json` to a network share. Set `BACKUP_ROOT` in `app.py` to your mount point:
+
+```python
+BACKUP_ROOT = Path("/run/user/1000/gvfs/smb-share:server=192.168.88.26,share=transcription")
+```
+
+The share must already be mounted before starting the app. On Linux, GNOME auto-mounts SMB shares under `/run/user/<uid>/gvfs/` when you connect via Files (Nautilus).
+
+**Backup** copies the current `annotations.json` to `<BACKUP_ROOT>/<project>/annotations.json`.
+
+**Sync** performs a per-task merge:
+- Task only on NAS → pulled into local
+- Task on both → the one with the newer `updated_at` timestamp wins
+- Task only local → kept as-is
+- Before writing, the current local file is saved as `annotations.json.bak`
+
+This makes it safe to work on the same project from two machines: split tasks between them, back up from each, then sync on either machine to get the combined result.
 
 ## Notes
 

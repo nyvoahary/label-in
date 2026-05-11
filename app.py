@@ -12,6 +12,7 @@ Defaults to the directory containing this file. Open http://127.0.0.1:5000
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,8 @@ elif (ROOT / "datasets").is_dir():
     DATA_ROOT = (ROOT / "datasets").resolve()
 else:
     DATA_ROOT = ROOT
+
+BACKUP_ROOT = Path(os.environ["BACKUP_ROOT"]) if "BACKUP_ROOT" in os.environ else None
 
 if not DATA_ROOT.exists():
     raise SystemExit(f"Root folder not found: {DATA_ROOT}")
@@ -252,6 +255,72 @@ def api_export(name: str):
             }]
         out.append(merged)
     return jsonify(out)
+
+
+@app.route("/api/projects/<name>/backup", methods=["POST"])
+def api_backup(name: str):
+    project = get_project(name)
+    src = project["annotations_file"]
+    if not src.exists():
+        return jsonify({"error": "No annotations file found"}), 404
+    if not BACKUP_ROOT.exists():
+        return jsonify({"error": "Backup destination not accessible"}), 503
+    dest_dir = BACKUP_ROOT / name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "annotations.json"
+    with open(src, "rb") as fsrc, open(dest, "wb") as fdst:
+        shutil.copyfileobj(fsrc, fdst)
+    return jsonify({"ok": True, "dest": str(dest)})
+
+
+def _merge_annotations(local: dict, remote: dict) -> tuple[dict, int, int]:
+    """Merge two annotation dicts. Per-task: prefer the one with newer updated_at.
+    Returns (merged, pulled_count, kept_count)."""
+    merged = dict(local)
+    pulled = 0
+    kept = 0
+    for key, remote_task in remote.items():
+        local_task = local.get(key)
+        if local_task is None:
+            # task only exists on remote
+            merged[key] = remote_task
+            pulled += 1
+        else:
+            remote_ts = remote_task.get("updated_at", "")
+            local_ts = local_task.get("updated_at", "")
+            if remote_ts > local_ts:
+                merged[key] = remote_task
+                pulled += 1
+            else:
+                kept += 1
+    return merged, pulled, kept
+
+
+@app.route("/api/projects/<name>/sync", methods=["POST"])
+def api_sync(name: str):
+    project = get_project(name)
+    local_path = project["annotations_file"]
+    if not BACKUP_ROOT.exists():
+        return jsonify({"error": "NAS not accessible"}), 503
+    nas_path = BACKUP_ROOT / name / "annotations.json"
+    if not nas_path.exists():
+        return jsonify({"error": "No backup found on NAS for this project"}), 404
+
+    local = json.loads(local_path.read_text()) if local_path.exists() else {}
+    remote = json.loads(nas_path.read_text())
+
+    merged, pulled, kept = _merge_annotations(local, remote)
+
+    if pulled == 0:
+        return jsonify({"action": "skipped", "reason": "local_up_to_date", "pulled": 0, "kept": kept})
+
+    # safety backup before overwriting
+    if local_path.exists():
+        with open(local_path, "rb") as fsrc, open(str(local_path) + ".bak", "wb") as fdst:
+            shutil.copyfileobj(fsrc, fdst)
+
+    local_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2))
+    return jsonify({"action": "merged", "pulled": pulled, "kept": kept})
 
 
 @app.route("/audio/<name>/<path:filename>")

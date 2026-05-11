@@ -170,6 +170,8 @@
       <a class="btn" href="/dashboard">Dashboard</a>
       <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
       <a class="btn" id="exportLink" href="#" target="_blank">Export JSON</a>
+      <button class="btn" id="backupBtn" title="Backup annotations to NAS">Backup to NAS</button>
+      <button class="btn" id="syncBtn" title="Merge NAS annotations into local">Sync from NAS</button>
     </div>
     <div class="content" id="content">
       <div class="empty">Loading…</div>
@@ -282,6 +284,45 @@ async function switchProject(name) {
   state.project = name;
   localStorage.setItem(STORAGE_KEY, name);
   document.getElementById("exportLink").href = `/api/projects/${encodeURIComponent(name)}/export`;
+  document.getElementById("backupBtn").onclick = async () => {
+    const btn = document.getElementById("backupBtn");
+    btn.disabled = true;
+    btn.textContent = "Backing up…";
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(name)}/backup`, { method: "POST" });
+      const j = await r.json();
+      btn.textContent = j.ok ? "✓ Backed up" : "✗ Failed";
+      if (!j.ok) console.error(j.error);
+    } catch (e) {
+      btn.textContent = "✗ Error";
+      console.error(e);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = "Backup to NAS"; }, 2500);
+    }
+  };
+
+  document.getElementById("syncBtn").onclick = async () => {
+    const btn = document.getElementById("syncBtn");
+    btn.disabled = true;
+    btn.textContent = "Syncing…";
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(name)}/sync`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) {
+        btn.textContent = `✗ ${j.error}`;
+      } else if (j.action === "skipped") {
+        btn.textContent = "✓ Already up to date";
+      } else {
+        btn.textContent = `✓ Pulled ${j.pulled} task${j.pulled !== 1 ? "s" : ""}`;
+        await fetchTasks();
+      }
+    } catch (e) {
+      btn.textContent = "✗ Error";
+      console.error(e);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = "Sync from NAS"; }, 3000);
+    }
+  };
   await fetchTasks();
 }
 
