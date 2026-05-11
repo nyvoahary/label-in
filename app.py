@@ -18,7 +18,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory, abort, render_template
+from flask import Flask, Response, jsonify, request, send_from_directory, abort, render_template
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -326,6 +326,96 @@ def api_sync(name: str):
 
     local_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2))
     return jsonify({"action": "merged", "pulled": pulled, "kept": kept})
+
+
+@app.route("/api/nas/projects")
+def api_nas_projects():
+    if BACKUP_ROOT is None:
+        return jsonify({"error": "BACKUP_ROOT not configured"}), 503
+    if not BACKUP_ROOT.exists():
+        return jsonify({"error": "NAS not accessible"}), 503
+    local_names = {p["name"] for p in discover_projects()}
+    out = []
+    for sub in sorted(p for p in BACKUP_ROOT.iterdir() if p.is_dir()):
+        ls = next(sub.glob("*.label_studio.json"), None)
+        if ls is None:
+            others = [p for p in sub.glob("*.json") if p.name != "annotations.json"]
+            if not others:
+                continue
+        out.append({"name": sub.name, "exists_locally": sub.name in local_names})
+    return jsonify({"projects": out})
+
+
+@app.route("/api/nas/projects/<name>/pull", methods=["POST"])
+def api_nas_pull(name: str):
+    if BACKUP_ROOT is None:
+        return jsonify({"error": "BACKUP_ROOT not configured"}), 503
+    if not BACKUP_ROOT.exists():
+        return jsonify({"error": "NAS not accessible"}), 503
+    src = BACKUP_ROOT / name
+    if not src.is_dir():
+        return jsonify({"error": "Project not found on NAS"}), 404
+    dest = DATA_ROOT / name
+    if dest.exists():
+        return jsonify({"error": "Project already exists locally"}), 409
+    shutil.copytree(src, dest)
+    return jsonify({"ok": True, "name": name, "dest": str(dest)})
+
+
+@app.route("/api/nas/projects/<name>/pull-stream")
+def api_nas_pull_stream(name: str):
+    if BACKUP_ROOT is None or not BACKUP_ROOT.exists():
+        return jsonify({"error": "NAS not accessible"}), 503
+    src = BACKUP_ROOT / name
+    if not src.is_dir():
+        return jsonify({"error": "Project not found on NAS"}), 404
+    dest = DATA_ROOT / name
+    if dest.exists():
+        return jsonify({"error": "Project already exists locally"}), 409
+
+    def sse(obj: dict) -> str:
+        return f"data: {json.dumps(obj)}\n\n"
+
+    def generate():
+        try:
+            files: list[tuple[Path, int]] = []
+            total_bytes = 0
+            for root, _, names in os.walk(src):
+                for n in names:
+                    fp = Path(root) / n
+                    sz = fp.stat().st_size
+                    files.append((fp, sz))
+                    total_bytes += sz
+            yield sse({"type": "start", "files": len(files), "bytes": total_bytes})
+
+            dest.mkdir(parents=True, exist_ok=False)
+            copied_bytes = 0
+            CHUNK = 1024 * 1024
+            for fp, _ in files:
+                rel = fp.relative_to(src)
+                dst = dest / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with open(fp, "rb") as fsrc, open(dst, "wb") as fdst:
+                    while True:
+                        buf = fsrc.read(CHUNK)
+                        if not buf:
+                            break
+                        fdst.write(buf)
+                        copied_bytes += len(buf)
+                        yield sse({
+                            "type": "progress",
+                            "copied": copied_bytes,
+                            "total": total_bytes,
+                            "file": str(rel),
+                        })
+            yield sse({"type": "done"})
+        except Exception as e:
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+            yield sse({"type": "error", "error": str(e)})
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/audio/<name>/<path:filename>")
