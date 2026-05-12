@@ -75,14 +75,27 @@
 
   .section-title { font-size: 13px; font-weight: 600; margin-bottom: 14px;
     display: flex; align-items: center; gap: 8px; }
-  .section-title span { color: var(--muted); font-weight: 400; font-size: 12px; }
 
-  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .filter-bar { display: flex; gap: 6px; margin-bottom: 16px; }
+  .filter-bar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 13px; font-size: 12px; cursor: pointer; transition: border-color .15s; }
+  .filter-bar button:hover { border-color: var(--accent); }
+  .filter-bar button.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .section-title span { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .section-title .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); font-weight: 500; }
+
+  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
   .project-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 20px; cursor: pointer; transition: border-color .15s, transform .15s; }
-  .project-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    padding: 20px; transition: border-color .15s, transform .15s; }
+  .project-card.clickable { cursor: pointer; }
+  .project-card.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
   .project-card .name { font-size: 14px; font-weight: 600; margin-bottom: 12px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: flex; align-items: center; gap: 8px; }
+  .project-card .name .nas-tag { font-size: 10px; font-weight: 500; padding: 1px 8px;
+    border-radius: 8px; background: rgba(245,158,11,0.15); color: var(--accent);
+    border: 1px solid rgba(245,158,11,0.3); }
   .project-card .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
   .project-card .stat-item { text-align: center; }
   .project-card .stat-item .num { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -98,6 +111,24 @@
     font-variant-numeric: tabular-nums; white-space: nowrap; }
   .project-card .prog-row .pct.accent { color: var(--accent); }
   .project-card .prog-row .pct.done { color: var(--done); }
+
+  .card-divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .nas-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+  .nas-row .nas-label { color: var(--muted); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; margin-right: auto; }
+  .nas-row .nas-status { font-size: 11px; }
+  .nas-row .nas-status.on-nas { color: var(--done); }
+  .nas-row .nas-status.off-nas { color: var(--muted); }
+  .nas-row .nas-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  .nas-row .nas-btn:hover { border-color: var(--accent); }
+  .nas-row .nas-btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .nas-row .nas-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .import-progress { margin-top: 8px; }
+  .import-progress .bar-track { height: 4px; }
+  .import-progress .bar-fill { transition: width .2s ease; }
+  .import-progress .import-status { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
   .empty-state { padding: 80px 20px; text-align: center; color: var(--muted); }
   .empty-state h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
@@ -116,30 +147,44 @@
   <h1>Dashboard</h1>
   <span class="sub">{{ root }}</span>
   <div class="spacer"></div>
-  <a href="/" id="backLink">← Back to labeling</a>
+  <a href="/projects" id="projectsLink">Go to labeling →</a>
   <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
 </div>
 
 <div class="container" id="app">
   <div class="empty-state">
     <h2>Loading…</h2>
-    <p>Fetching dashboard data.</p>
+    <p>Fetching project data.</p>
   </div>
 </div>
 
 <script>
-const state = { projects: [], overall: null };
+const state = { local: { projects: [], overall: null }, nas: { projects: [], accessible: false }, sync: {}, importing: {}, filter: "all" };
 
 async function load() {
-  const r = await fetch("/api/dashboard");
-  const j = await r.json();
-  state.overall = j.overall;
-  state.projects = j.projects;
+  const [dash, nas, sync] = await Promise.all([
+    fetch("/api/dashboard").then(r => r.json()).catch(() => null),
+    fetch("/api/nas/projects").then(r => r.json()).catch(() => null),
+    fetch("/api/sync-status").then(r => r.json()).catch(() => null),
+  ]);
+
+  if (dash) {
+    state.local.overall = dash.overall;
+    state.local.projects = dash.projects;
+  }
+  if (nas) {
+    state.nas.projects = nas.projects;
+    state.nas.accessible = true;
+  }
+  if (sync) {
+    state.sync = sync.projects || {};
+    if (!sync.nas_accessible) state.nas.accessible = false;
+  }
   render();
 }
 
 function render() {
-  const o = state.overall;
+  const o = state.local.overall;
   if (!o || !o.projects) {
     document.getElementById("app").innerHTML =
       `<div class="empty-state"><h2>No data</h2><p>No projects found.</p></div>`;
@@ -147,33 +192,50 @@ function render() {
   }
 
   const barColor = o.completion >= 100 ? "var(--done)" : "var(--accent)";
+  const localNames = new Set(state.local.projects.map(p => p.name));
+  const nasMap = {};
+  state.nas.projects.forEach(p => { nasMap[p.name] = p; });
 
-  document.getElementById("app").innerHTML = `
+  // Build combined card list: local projects + NAS-only projects
+  const cards = [];
+
+  // 1. Local projects (with NAS info if applicable)
+  state.local.projects.forEach(p => {
+    cards.push({ type: "local", data: p, onNas: p.name in nasMap });
+  });
+
+  // 2. NAS-only projects
+  state.nas.projects.forEach(p => {
+    if (!p.exists_locally) {
+      cards.push({ type: "nas-only", data: p });
+    }
+  });
+
+  // Sort: local first, then NAS-only
+  cards.sort((a, b) => {
+    if (a.type === "local" && b.type !== "local") return -1;
+    if (a.type !== "local" && b.type === "local") return 1;
+    return a.data.name.localeCompare(b.data.name);
+  });
+
+  // Apply filter
+  const filteredCards = cards.filter(card => {
+    if (state.filter === "all") return true;
+    if (card.type !== "local") return false;
+    if (state.filter === "not_started") return card.data.completion === 0;
+    if (state.filter === "in_progress") return card.data.completion > 0 && card.data.completion < 100;
+    if (state.filter === "done") return card.data.completion === 100;
+    return true;
+  });
+
+  let html = `
     <div class="stats-grid">
-      <div class="stat-card accent">
-        <div class="value">${o.projects}</div>
-        <div class="label">Projects</div>
-      </div>
-      <div class="stat-card">
-        <div class="value">${o.tasks}</div>
-        <div class="label">Total Tasks</div>
-      </div>
-      <div class="stat-card done">
-        <div class="value">${o.done}</div>
-        <div class="label">Done</div>
-      </div>
-      <div class="stat-card pending">
-        <div class="value">${o.pending}</div>
-        <div class="label">Pending</div>
-      </div>
-      <div class="stat-card review">
-        <div class="value">${o.review}</div>
-        <div class="label">Review</div>
-      </div>
-      <div class="stat-card autosave">
-        <div class="value">${o.autosave}</div>
-        <div class="label">Auto-saved</div>
-      </div>
+      <div class="stat-card accent"><div class="value">${o.projects}</div><div class="label">Projects</div></div>
+      <div class="stat-card"><div class="value">${o.tasks}</div><div class="label">Total Tasks</div></div>
+      <div class="stat-card done"><div class="value">${o.done}</div><div class="label">Done</div></div>
+      <div class="stat-card pending"><div class="value">${o.pending}</div><div class="label">Pending</div></div>
+      <div class="stat-card review"><div class="value">${o.review}</div><div class="label">Review</div></div>
+      <div class="stat-card autosave"><div class="value">${o.autosave}</div><div class="label">Auto-saved</div></div>
     </div>
 
     <div class="overall-bar">
@@ -186,55 +248,196 @@ function render() {
       </div>
     </div>
 
+    <div class="filter-bar">
+      <button data-filter="all" class="${state.filter === "all" ? "active" : ""}">All</button>
+      <button data-filter="not_started" class="${state.filter === "not_started" ? "active" : ""}">Not started</button>
+      <button data-filter="in_progress" class="${state.filter === "in_progress" ? "active" : ""}">In progress</button>
+      <button data-filter="done" class="${state.filter === "done" ? "active" : ""}">Done</button>
+    </div>
+
     <div class="section-title">
       Projects
-      <span>(${state.projects.length})</span>
+      <span>(${filteredCards.length})</span>
+      ${state.nas.accessible ? `<span class="badge">NAS connected</span>` : `<span class="badge" style="color:var(--review);border-color:rgba(239,68,68,0.3)">NAS offline</span>`}
     </div>
 
     <div class="project-grid">
-      ${state.projects.map(p => {
-        const pct = p.completion;
-        const pctColor = pct >= 100 ? "done" : "accent";
-        return `
-          <div class="project-card" data-name="${esc(p.name)}">
-            <div class="name">${esc(p.name)}</div>
-            <div class="stats">
-              <div class="stat-item done">
-                <div class="num">${p.done}</div>
-                <div class="lbl">Done</div>
-              </div>
-              <div class="stat-item pending">
-                <div class="num">${p.pending}</div>
-                <div class="lbl">Pending</div>
-              </div>
-              <div class="stat-item review">
-                <div class="num">${p.review}</div>
-                <div class="lbl">Review</div>
-              </div>
-              <div class="stat-item autosave">
-                <div class="num">${p.autosave}</div>
-                <div class="lbl">Auto-save</div>
-              </div>
-            </div>
-            <div class="prog-row">
-              <div class="bar-track">
-                <div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div>
-              </div>
-              <span class="pct ${pctColor}">${pct}%</span>
-            </div>
-          </div>
-        `;
+      ${filteredCards.map(card => {
+        if (card.type === "local") {
+          return renderLocalCard(card.data, card.onNas);
+        } else {
+          return renderNasOnlyCard(card.data);
+        }
       }).join("")}
     </div>
   `;
 
-  document.querySelectorAll(".project-card").forEach(el => {
-    el.addEventListener("click", () => {
+  document.getElementById("app").innerHTML = html;
+
+  // Wire up click-to-label on local cards
+  document.querySelectorAll(".project-card.clickable").forEach(el => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".nas-row")) return;
       const name = el.dataset.name;
       localStorage.setItem("labelin.lastProject", name);
-      window.location.href = "/";
+      window.location.href = "/projects";
     });
   });
+
+  // Wire up filter buttons
+  document.querySelectorAll(".filter-bar button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.filter = btn.dataset.filter;
+      render();
+    });
+  });
+}
+
+function renderLocalCard(p, onNas) {
+  const pct = p.completion;
+  const pctColor = pct >= 100 ? "done" : "accent";
+  const s = state.sync[p.name] || {};
+
+  let nasHtml = "";
+  if (!state.nas.accessible) {
+    nasHtml = `<span class="nas-status off-nas">NAS offline</span>`;
+  } else if (!onNas) {
+    nasHtml = `<span class="nas-status off-nas">Not on NAS</span>
+               ${state.nas.accessible ? `<button class="nas-btn" onclick="backupProject('${esc(p.name)}', this)">Backup →</button>` : ""}`;
+  } else if (s.in_sync) {
+    nasHtml = `<span class="nas-status on-nas">In sync</span>`;
+  } else {
+    if (s.nas_ahead) {
+      nasHtml += `<button class="nas-btn" onclick="syncProject('${esc(p.name)}', this)">Sync ↓</button>`;
+    }
+    if (s.local_ahead) {
+      nasHtml += `<button class="nas-btn" onclick="backupProject('${esc(p.name)}', this)">Backup ↑</button>`;
+    }
+    if (!nasHtml) {
+      nasHtml = `<span class="nas-status on-nas">On NAS</span>`;
+    }
+  }
+
+  return `
+    <div class="project-card clickable" data-name="${esc(p.name)}">
+      <div class="name">${esc(p.name)}</div>
+      <div class="stats">
+        <div class="stat-item done"><div class="num">${p.done}</div><div class="lbl">Done</div></div>
+        <div class="stat-item pending"><div class="num">${p.pending}</div><div class="lbl">Pending</div></div>
+        <div class="stat-item review"><div class="num">${p.review}</div><div class="lbl">Review</div></div>
+        <div class="stat-item autosave"><div class="num">${p.autosave}</div><div class="lbl">Auto-save</div></div>
+      </div>
+      <div class="prog-row">
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div></div>
+        <span class="pct ${pctColor}">${pct}%</span>
+      </div>
+      <div class="card-divider"></div>
+      <div class="nas-row">
+        <span class="nas-label">NAS</span>
+        ${nasHtml}
+      </div>
+      <div id="action-status-${esc(p.name)}"></div>
+    </div>`;
+}
+
+function renderNasOnlyCard(p) {
+  return `
+    <div class="project-card">
+      <div class="name">${esc(p.name)} <span class="nas-tag">NAS</span></div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:14px;">Not imported yet</div>
+      <div class="nas-row">
+        <span class="nas-label">NAS</span>
+        <button class="nas-btn primary" onclick="importProject('${esc(p.name)}', this)">Import →</button>
+      </div>
+      <div class="import-progress" id="import-progress-${esc(p.name)}"></div>
+    </div>`;
+}
+
+async function syncProject(name, btn) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "Syncing…";
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(name)}/sync`, { method: "POST" });
+    const j = await r.json();
+    if (r.ok) {
+      const s = state.sync[name] || {};
+      s.nas_ahead = false;
+      s.in_sync = !s.local_ahead;
+      render();
+    }
+    btn.textContent = r.ok && j.action !== "skipped" ? "✓ Synced" : "✓ Up to date";
+  } catch (e) {
+    btn.textContent = "✗ Error";
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
+}
+
+async function backupProject(name, btn) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "Backing up…";
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(name)}/backup`, { method: "POST" });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      const s = state.sync[name] || {};
+      s.on_nas = true;
+      s.local_ahead = false;
+      s.in_sync = !s.nas_ahead;
+      render();
+    }
+    btn.textContent = j.ok ? "✓ Backed up" : "✗ Failed";
+  } catch (e) {
+    btn.textContent = "✗ Error";
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
+}
+
+function importProject(name, btn) {
+  btn.disabled = true;
+  btn.textContent = "Importing…";
+  const progressEl = document.getElementById("import-progress-" + name);
+  progressEl.innerHTML = `
+    <div class="bar-track"><div class="bar-fill" id="import-bar-${name}" style="width:0%;background:var(--accent)"></div></div>
+    <div class="import-status" id="import-status-${name}">Starting…</div>`;
+
+  const es = new EventSource(`/api/nas/projects/${encodeURIComponent(name)}/pull-stream`);
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const bar = document.getElementById("import-bar-" + name);
+    const status = document.getElementById("import-status-" + name);
+
+    if (data.type === "start") {
+      if (status) status.textContent = `Copying ${data.files} files (${fmtBytes(data.bytes)})…`;
+    } else if (data.type === "progress") {
+      if (bar) bar.style.width = Math.min(95, (data.copied / data.total) * 100) + "%";
+      if (status) status.textContent = `${fmtBytes(data.copied)} / ${fmtBytes(data.total)} · ${data.file}`;
+    } else if (data.type === "done") {
+      if (bar) { bar.style.width = "100%"; bar.style.background = "var(--done)"; }
+      if (status) status.textContent = "✓ Import complete";
+      es.close();
+      setTimeout(() => location.reload(), 1200);
+    } else if (data.type === "error") {
+      if (status) status.textContent = "✗ " + (data.error || "Import failed");
+      btn.disabled = false;
+      btn.textContent = "Retry";
+      es.close();
+    }
+  };
+  es.onerror = () => {
+    const status = document.getElementById("import-status-" + name);
+    if (status) status.textContent = "✗ Connection lost";
+    btn.disabled = false;
+    btn.textContent = "Retry";
+    es.close();
+  };
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 function esc(s) {
@@ -261,7 +464,6 @@ function toggleTheme() {
 }
 
 document.getElementById("themeBtn").onclick = toggleTheme;
-
 const savedTheme = localStorage.getItem("labelin.theme");
 setTheme(savedTheme === "light" ? "light" : "dark");
 

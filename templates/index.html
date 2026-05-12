@@ -177,7 +177,7 @@
       <button id="nextBtn">Next →</button>
       <span class="meta" id="metaIdx">—</span>
       <div class="spacer"></div>
-      <a class="btn" href="/dashboard">Dashboard</a>
+      <a class="btn" href="/">Dashboard</a>
       <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
       <div class="overflow-menu">
         <button class="btn overflow-btn" id="overflowBtn" title="More actions">⋯</button>
@@ -358,8 +358,9 @@ function renderSidebar() {
   const filtered = state.tasks.filter(t =>
     state.filter === "all" ? true :
     state.filter === "done" ? t.status === "done" :
+    state.filter === "pending" ? t.status === "pending" :
     state.filter === "review" ? (t.status === "review" || t.status === "autosave") :
-    t.status !== "done"
+    true
   );
   list.innerHTML = filtered.map(t => `
     <div class="task-item ${t.index === state.current ? "active" : ""}" data-idx="${t.index}">
@@ -676,18 +677,27 @@ async function autoSave() {
   const text = ta.value.trim();
   const status = "autosave";
   const idx = state.current;
-  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, status }),
-  });
-  const j = await r.json();
-  if (j.ok) {
-    state.tasks[idx].annotation = text;
-    state.tasks[idx].status = status;
-    document.getElementById("saveStatus").textContent = "✓ auto-saved";
-    document.getElementById("saveStatus").classList.add("autosaved");
-    renderSidebar();
+  if (state.saveController) state.saveController.abort();
+  const controller = new AbortController();
+  state.saveController = controller;
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, status }),
+      signal: controller.signal,
+    });
+    const j = await r.json();
+    if (j.ok) {
+      state.tasks[idx].annotation = text;
+      state.tasks[idx].status = status;
+      document.getElementById("saveStatus").textContent = "✓ auto-saved";
+      document.getElementById("saveStatus").classList.add("autosaved");
+      renderSidebar();
+    }
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    console.warn("autoSave failed", e);
   }
 }
 
@@ -711,10 +721,34 @@ async function save(advance, statusOverride) {
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");
     renderSidebar();
-    if (advance) goto(idx + 1);
+    if (advance) goto(getNextFilteredIndex(idx));
   } else {
     document.getElementById("saveStatus").textContent = "save failed";
   }
+}
+
+function getFilteredTasks() {
+  return state.tasks.filter(t =>
+    state.filter === "all" ? true :
+    state.filter === "done" ? t.status === "done" :
+    state.filter === "pending" ? t.status === "pending" :
+    state.filter === "review" ? (t.status === "review" || t.status === "autosave") :
+    true
+  );
+}
+
+function getNextFilteredIndex(currentIdx) {
+  const filtered = getFilteredTasks();
+  const pos = filtered.findIndex(t => t.index === currentIdx);
+  if (pos === -1 || pos >= filtered.length - 1) return -1;
+  return filtered[pos + 1].index;
+}
+
+function getPrevFilteredIndex(currentIdx) {
+  const filtered = getFilteredTasks();
+  const pos = filtered.findIndex(t => t.index === currentIdx);
+  if (pos <= 0) return -1;
+  return filtered[pos - 1].index;
 }
 
 function goto(idx) {

@@ -112,6 +112,11 @@ def all_predictions(task: dict) -> list[dict]:
 
 @app.route("/")
 def index():
+    return render_template("dashboard.html", root=DATA_ROOT.name)
+
+
+@app.route("/projects")
+def labeling():
     return render_template("index.html", root=DATA_ROOT.name)
 
 
@@ -218,10 +223,17 @@ def api_save(name: str, idx: int):
         abort(404)
     payload = request.get_json(force=True) or {}
     text = (payload.get("text") or "").strip()
-    status = payload.get("status") or ("done" if text else "pending")
+    status = payload.get("status")
+    if status not in ("done", "pending", "review", "autosave"):
+        status = "done" if text else "pending"
 
     audio = task_audio(tasks[idx])
     annos = load_annotations(project)
+
+    existing = annos.get(audio, {})
+    if status == "autosave" and existing.get("status") in ("done", "review"):
+        status = existing["status"]
+
     annos[audio] = {
         "index": idx,
         "audio": audio,
@@ -326,6 +338,31 @@ def api_sync(name: str):
 
     local_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2))
     return jsonify({"action": "merged", "pulled": pulled, "kept": kept})
+
+
+@app.route("/api/sync-status")
+def api_sync_status():
+    if BACKUP_ROOT is None or not BACKUP_ROOT.exists():
+        return jsonify({"nas_accessible": False, "projects": {}})
+    out = {}
+    for p in discover_projects():
+        name = p["name"]
+        nas_dir = BACKUP_ROOT / name
+        if not nas_dir.is_dir() or not (nas_dir / "annotations.json").exists():
+            out[name] = {"on_nas": False}
+            continue
+        nas_path = nas_dir / "annotations.json"
+        local = json.loads(p["annotations_file"].read_text()) if p["annotations_file"].exists() else {}
+        remote = json.loads(nas_path.read_text())
+        local_max = max((v.get("updated_at", "") for v in local.values()), default="")
+        remote_max = max((v.get("updated_at", "") for v in remote.values()), default="")
+        out[name] = {
+            "on_nas": True,
+            "local_ahead": local_max > remote_max,
+            "nas_ahead": remote_max > local_max,
+            "in_sync": local_max == remote_max and bool(local_max),
+        }
+    return jsonify({"nas_accessible": True, "projects": out})
 
 
 @app.route("/api/nas/projects")
