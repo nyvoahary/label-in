@@ -625,7 +625,7 @@ function select(idx) {
     };
   });
   document.getElementById("saveBtn").onclick = () => save(true);
-  document.getElementById("skipBtn").onclick = () => goto(idx + 1);
+  document.getElementById("skipBtn").onclick = () => goto(getNextFilteredIndex(idx));
   document.getElementById("markPending").onclick = () => save(false, "pending");
   document.getElementById("markReview").onclick = () => save(false, "review");
 
@@ -770,8 +770,8 @@ document.querySelectorAll(".filter button").forEach(b => {
     renderSidebar();
   };
 });
-document.getElementById("prevBtn").onclick = () => goto(state.current - 1);
-document.getElementById("nextBtn").onclick = () => goto(state.current + 1);
+document.getElementById("prevBtn").onclick = () => goto(getPrevFilteredIndex(state.current));
+document.getElementById("nextBtn").onclick = () => goto(getNextFilteredIndex(state.current));
 
 document.addEventListener("keydown", (e) => {
   const ta = document.getElementById("annotation");
@@ -784,7 +784,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Tab") {
     e.preventDefault();
-    goto(state.current + (e.shiftKey ? -1 : 1));
+    goto(e.shiftKey ? getPrevFilteredIndex(state.current) : getNextFilteredIndex(state.current));
     return;
   }
   if (document.activeElement === ta) return;
