@@ -708,6 +708,8 @@ async function save(advance, statusOverride) {
   const text = ta.value.trim();
   const status = statusOverride || (text ? "done" : "pending");
   const idx = state.current;
+  // Capture next filtered index before save, in case the status change drops this task from the filter
+  const nextIdx = advance ? getNextFilteredIndex(idx) : -1;
   document.getElementById("saveStatus").textContent = "saving…";
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
     method: "POST",
@@ -721,7 +723,13 @@ async function save(advance, statusOverride) {
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");
     renderSidebar();
-    if (advance) goto(getNextFilteredIndex(idx));
+    if (advance) {
+      if (nextIdx >= 0) goto(nextIdx);
+      else {
+        const filtered = getFilteredTasks();
+        if (filtered.length) goto(filtered[0].index);
+      }
+    }
   } else {
     document.getElementById("saveStatus").textContent = "save failed";
   }

@@ -349,7 +349,13 @@ def api_sync_status():
         name = p["name"]
         nas_dir = BACKUP_ROOT / name
         if not nas_dir.is_dir() or not (nas_dir / "annotations.json").exists():
-            out[name] = {"on_nas": False}
+            local = json.loads(p["annotations_file"].read_text()) if p["annotations_file"].exists() else {}
+            out[name] = {
+                "on_nas": False,
+                "local_ahead": bool(local),
+                "nas_ahead": False,
+                "in_sync": False,
+            }
             continue
         nas_path = nas_dir / "annotations.json"
         local = json.loads(p["annotations_file"].read_text()) if p["annotations_file"].exists() else {}
