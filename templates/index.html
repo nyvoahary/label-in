@@ -69,26 +69,31 @@
   .toolbar .spacer { flex: 1; }
   .toolbar button, .toolbar a.btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; text-decoration: none; }
-  .toolbar .theme-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; padding: 6px; transition: transform .15s ease, background .15s ease, border-color .15s ease, color .15s ease; overflow: hidden; }
-  .toolbar .theme-btn:hover { transform: scale(1.05); border-color: var(--accent); background: rgba(255, 255, 255, 0.08); }
-  .toolbar .theme-btn:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.14); }
-  .light-theme .toolbar .theme-btn:hover { background: rgba(0, 0, 0, 0.05); }
-  .light-theme .toolbar .theme-btn:active { background: rgba(0, 0, 0, 0.1); }
-  .toolbar .theme-btn.animating { animation: icon-slide 240ms ease; }
-  @keyframes icon-slide { 0% { opacity: 0; transform: translateY(12px); } 100% { opacity: 1; transform: translateY(0); } }
   .toolbar button.primary { background: var(--accent); border-color: var(--accent); color: white; }
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar .meta { font-size: 12px; color: var(--muted); }
+  .toggle-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  .toggle-switch input { display: none; }
+  .toggle-track { width: 32px; height: 18px; background: var(--muted); border-radius: 9px;
+    position: relative; transition: background .2s; flex-shrink: 0; }
+  .toggle-switch input:checked ~ .toggle-track { background: var(--accent); }
+  .toggle-thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    background: #fff; border-radius: 50%; transition: left .2s; }
+  .toggle-switch input:checked ~ .toggle-track .toggle-thumb { left: 16px; }
+  .toggle-thumb { display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; }
+  .theme-thumb { background: none; font-size: 11px; }
+  .toggle-label { font-size: 12px; color: var(--muted); }
   .overflow-menu { position: relative; }
   .overflow-btn { font-size: 18px !important; line-height: 1; padding: 2px 10px !important; letter-spacing: 2px; }
   .overflow-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
     min-width: 180px; display: none; z-index: 100; overflow: hidden; }
   .overflow-dropdown.open { display: block; }
-  .overflow-dropdown button { display: block; width: 100%; background: none; border: none;
-    color: var(--text); padding: 10px 14px; font-size: 13px; text-align: left; cursor: pointer; }
-  .overflow-dropdown button:hover { background: var(--panel-2); }
-  .overflow-dropdown button + button { border-top: 1px solid var(--border); }
+  .overflow-dropdown button, .dropdown-link { display: block; width: 100%; background: none; border: none;
+    color: var(--text); padding: 10px 14px; font-size: 13px; text-align: left; cursor: pointer;
+    text-decoration: none; }
+  .overflow-dropdown button:hover, .dropdown-link:hover { background: var(--panel-2); }
+  .overflow-dropdown button + button, .dropdown-link + button, .dropdown-link + .dropdown-link { border-top: 1px solid var(--border); }
 
   .content { flex: 1; padding: 24px 32px; overflow-y: auto; }
   .meta-row { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-bottom: 14px; flex-wrap: wrap; }
@@ -177,13 +182,20 @@
       <button id="nextBtn">Next →</button>
       <span class="meta" id="metaIdx">—</span>
       <div class="spacer"></div>
-      <a class="btn" href="/">Dashboard</a>
-      <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
+      <label class="toggle-switch" title="Toggle autoplay on next task">
+        <input type="checkbox" id="autoplayBtn">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-label">Auto</span>
+      </label>
+      <label class="toggle-switch" title="Toggle theme">
+        <input type="checkbox" id="themeBtn">
+        <span class="toggle-track theme-track"><span class="toggle-thumb theme-thumb" id="themeIcon">🌙</span></span>
+      </label>
       <div class="overflow-menu">
         <button class="btn overflow-btn" id="overflowBtn" title="More actions">⋯</button>
         <div class="overflow-dropdown" id="overflowDropdown">
-          <button id="backupBtn">Backup to NAS</button>
-          <button id="syncBtn">Sync from NAS</button>
+          <a class="dropdown-link" href="/">Dashboard</a>
+          <div id="nasActions"></div>
         </div>
       </div>
     </div>
@@ -208,6 +220,7 @@ const state = {
   loopRegion: null,
   loop: true,
   rate: 1,
+  autoplay: localStorage.getItem("labelin.autoplay") !== "false",
   saveTimer: null,
 };
 
@@ -297,46 +310,72 @@ async function fetchProjects() {
 async function switchProject(name) {
   state.project = name;
   localStorage.setItem(STORAGE_KEY, name);
-  document.getElementById("backupBtn").onclick = async () => {
-    const btn = document.getElementById("backupBtn");
-    btn.disabled = true;
-    btn.textContent = "Backing up…";
-    try {
-      const r = await fetch(`/api/projects/${encodeURIComponent(name)}/backup`, { method: "POST" });
-      const j = await r.json();
-      btn.textContent = j.ok ? "✓ Backed up" : "✗ Failed";
-      if (!j.ok) console.error(j.error);
-    } catch (e) {
-      btn.textContent = "✗ Error";
-      console.error(e);
-    } finally {
-      setTimeout(() => { btn.disabled = false; btn.textContent = "Backup to NAS"; }, 2500);
-    }
-  };
-
-  document.getElementById("syncBtn").onclick = async () => {
-    const btn = document.getElementById("syncBtn");
-    btn.disabled = true;
-    btn.textContent = "Syncing…";
-    try {
-      const r = await fetch(`/api/projects/${encodeURIComponent(name)}/sync`, { method: "POST" });
-      const j = await r.json();
-      if (!r.ok) {
-        btn.textContent = `✗ ${j.error}`;
-      } else if (j.action === "skipped") {
-        btn.textContent = "✓ Already up to date";
-      } else {
-        btn.textContent = `✓ Pulled ${j.pulled} task${j.pulled !== 1 ? "s" : ""}`;
-        await fetchTasks();
-      }
-    } catch (e) {
-      btn.textContent = "✗ Error";
-      console.error(e);
-    } finally {
-      setTimeout(() => { btn.disabled = false; btn.textContent = "Sync from NAS"; }, 3000);
-    }
-  };
+  renderNasButtons(name);
   await fetchTasks();
+}
+
+async function renderNasButtons(name) {
+  const container = document.getElementById("nasActions");
+  try {
+    const r = await fetch("/api/sync-status");
+    const j = await r.json();
+    const status = j.projects?.[name];
+    if (!j.nas_accessible || !status) {
+      container.innerHTML = "";
+      return;
+    }
+    let html = "";
+    if (!status.on_nas || status.local_ahead) {
+      html += `<button data-nas="backup">Backup to NAS</button>`;
+    }
+    if (status.nas_ahead) {
+      html += `<button data-nas="sync">Sync from NAS</button>`;
+    }
+    container.innerHTML = html;
+    container._nasProject = name;
+  } catch (e) {
+    container.innerHTML = "";
+  }
+}
+
+async function doBackup(name) {
+  const container = document.getElementById("nasActions");
+  container.innerHTML = "<button disabled>Backing up\u2026</button>";
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(name)}/backup`, { method: "POST" });
+    const j = await r.json();
+    container.innerHTML = j.ok
+      ? '<button disabled style="color:var(--done)">\u2713 Backed up</button>'
+      : '<button disabled style="color:#ef4444">\u2717 Failed</button>';
+    if (!j.ok) console.error(j.error);
+  } catch (e) {
+    container.innerHTML = '<button disabled style="color:#ef4444">\u2717 Error</button>';
+    console.error(e);
+  } finally {
+    setTimeout(() => renderNasButtons(name), 2500);
+  }
+}
+
+async function doSync(name) {
+  const container = document.getElementById("nasActions");
+  container.innerHTML = "<button disabled>Syncing\u2026</button>";
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(name)}/sync`, { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) {
+      container.innerHTML = `<button disabled style="color:#ef4444">\u2717 ${j.error}</button>`;
+    } else if (j.action === "skipped") {
+      container.innerHTML = '<button disabled style="color:var(--done)">\u2713 Already up to date</button>';
+    } else {
+      container.innerHTML = `<button disabled style="color:var(--done)">\u2713 Pulled ${j.pulled} task${j.pulled !== 1 ? "s" : ""}</button>`;
+      await fetchTasks();
+    }
+  } catch (e) {
+    container.innerHTML = '<button disabled style="color:#ef4444">\u2717 Error</button>';
+    console.error(e);
+  } finally {
+    setTimeout(() => renderNasButtons(name), 3000);
+  }
 }
 
 async function fetchTasks() {
@@ -584,6 +623,10 @@ function select(idx) {
 
   initWavesurfer(audioUrl);
 
+  if (state.autoplay) {
+    state.ws.on("ready", () => { state.ws.play(); }, { once: true });
+  }
+
   const ta = document.getElementById("annotation");
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -816,20 +859,24 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+const autoplayBtn = document.getElementById("autoplayBtn");
+autoplayBtn.checked = state.autoplay;
+autoplayBtn.onchange = () => {
+  state.autoplay = autoplayBtn.checked;
+  localStorage.setItem("labelin.autoplay", state.autoplay);
+};
+
 function setTheme(theme) {
   const isLight = theme === "light";
   document.documentElement.classList.toggle("light-theme", isLight);
   const themeBtn = document.getElementById("themeBtn");
-  if (themeBtn) themeBtn.textContent = isLight ? "🌙" : "☀️";
+  if (themeBtn) themeBtn.checked = isLight;
+  const themeIcon = document.getElementById("themeIcon");
+  if (themeIcon) themeIcon.textContent = isLight ? "☀️" : "🌙";
   localStorage.setItem("labelin.theme", theme);
 }
 
 function toggleTheme() {
-  const btn = document.getElementById("themeBtn");
-  if (btn) {
-    btn.classList.add("animating");
-    btn.addEventListener("animationend", () => btn.classList.remove("animating"), { once: true });
-  }
   setTheme(document.documentElement.classList.contains("light-theme") ? "dark" : "light");
 }
 
@@ -839,12 +886,22 @@ const overflowDropdown = document.getElementById("overflowDropdown");
 overflowBtn.onclick = (e) => { e.stopPropagation(); overflowDropdown.classList.toggle("open"); };
 document.addEventListener("click", () => overflowDropdown.classList.remove("open"));
 overflowDropdown.onclick = (e) => {
-  if (e.target.tagName === "BUTTON") {
+  if (e.target.tagName === "BUTTON" || e.target.tagName === "A") {
     overflowDropdown.classList.remove("open");
   }
 };
 
-document.getElementById("themeBtn").onclick = toggleTheme;
+// NAS action delegation
+document.getElementById("nasActions").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-nas]");
+  if (!btn) return;
+  const name = btn.closest("#nasActions")._nasProject;
+  if (!name) return;
+  if (btn.dataset.nas === "backup") doBackup(name);
+  else if (btn.dataset.nas === "sync") doSync(name);
+});
+
+document.getElementById("themeBtn").onchange = toggleTheme;
 
 const savedTheme = localStorage.getItem("labelin.theme");
 setTheme(savedTheme === "light" ? "light" : "dark");
