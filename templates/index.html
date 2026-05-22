@@ -223,6 +223,7 @@
 import WaveSurfer from "{{ url_for('static', filename='wavesurfer/wavesurfer.esm.js') }}";
 import RegionsPlugin from "{{ url_for('static', filename='wavesurfer/plugins/regions.esm.js') }}";
 
+// Central application state shared across all functions.
 const state = {
   projects: [],
   project: null,
@@ -241,12 +242,14 @@ const state = {
   activeLangs: JSON.parse(localStorage.getItem("labelin.langs") || '["mg"]'),
 };
 
+// Preload per-language word lists and previously learned words for autocomplete.
 const WORD_FILES = { mg: "/static/mg_words.json", fr: "/static/fr_words.json", en: "/static/en_words.json" };
 Object.entries(WORD_FILES).forEach(([lang, url]) => {
   fetch(url).then(r => r.json()).then(words => { state.wordLists[lang] = words; }).catch(() => {});
 });
 fetch("/api/learned-words").then(r => r.json()).then(words => { state.learnedWords = words; }).catch(() => {});
 
+// Syncs the language-filter checkboxes with state and persists changes to localStorage.
 function initLangToggles() {
   ["mg","fr","en"].forEach(lang => {
     const el = document.getElementById("lang" + lang.toUpperCase());
@@ -266,6 +269,7 @@ const STORAGE_KEY = "labelin.lastProject";
 // Cursor position saved from the annotation textarea before it loses focus.
 let savedCursor = 0;
 
+// Keeps savedCursor in sync with the annotation textarea's caret position.
 function trackCursor(ta) {
   const save = () => { savedCursor = ta.selectionStart; };
   ta.addEventListener("keyup", save);
@@ -274,6 +278,7 @@ function trackCursor(ta) {
   ta.addEventListener("blur", save);
 }
 
+// Replaces the word under the saved cursor position with the clicked prediction word.
 function insertPredictionText(word) {
   const ta = document.getElementById("annotation");
   if (!ta) return;
@@ -292,6 +297,7 @@ function insertPredictionText(word) {
   savedCursor = newPos;
 }
 
+// Makes each word in the predictions panel individually clickable for insertion into the annotation.
 function setupPredictionWords(container) {
   if (!container) return;
   container.querySelectorAll(".pred-body").forEach(predEl => {
@@ -321,6 +327,7 @@ function setupPredictionWords(container) {
   });
 }
 
+// Loads all available projects from the API and populates the project selector.
 async function fetchProjects() {
   const r = await fetch("/api/projects");
   const j = await r.json();
@@ -344,6 +351,7 @@ async function fetchProjects() {
   sel.onchange = () => switchProject(sel.value);
 }
 
+// Activates a project by name, persisting the choice and reloading its tasks.
 async function switchProject(name) {
   state.project = name;
   localStorage.setItem(STORAGE_KEY, name);
@@ -351,6 +359,7 @@ async function switchProject(name) {
   await fetchTasks();
 }
 
+// Shows Backup/Sync NAS action buttons based on the current project's sync status.
 async function renderNasButtons(name) {
   const container = document.getElementById("nasActions");
   try {
@@ -375,6 +384,7 @@ async function renderNasButtons(name) {
   }
 }
 
+// Pushes the current project's data to the NAS and reflects the result in the UI.
 async function doBackup(name) {
   const container = document.getElementById("nasActions");
   container.innerHTML = "<button disabled>Backing up\u2026</button>";
@@ -393,6 +403,7 @@ async function doBackup(name) {
   }
 }
 
+// Pulls the latest tasks from the NAS into the current project, then refreshes the task list.
 async function doSync(name) {
   const container = document.getElementById("nasActions");
   container.innerHTML = "<button disabled>Syncing\u2026</button>";
@@ -415,6 +426,7 @@ async function doSync(name) {
   }
 }
 
+// Fetches all tasks for the active project and opens the first pending task.
 async function fetchTasks() {
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks`);
   const j = await r.json();
@@ -429,6 +441,7 @@ async function fetchTasks() {
   }
 }
 
+// Rebuilds the task list, progress bar, and project dropdown label to reflect current state.
 function renderSidebar() {
   const list = document.getElementById("taskList");
   const filtered = state.tasks.filter(t =>
@@ -463,6 +476,7 @@ function renderSidebar() {
   if (rc) rc.textContent = reviewCount ? `(${reviewCount})` : "";
 }
 
+// Destroys the current WaveSurfer instance and clears all related state.
 function teardownWavesurfer() {
   if (state.ws) {
     try { state.ws.destroy(); } catch (e) { /* ignore */ }
@@ -472,6 +486,7 @@ function teardownWavesurfer() {
   state.loopRegion = null;
 }
 
+// Formats a duration in seconds as M:SS.ss for display in the player.
 function fmtTime(s) {
   if (!isFinite(s)) return "—";
   const m = Math.floor(s / 60);
@@ -479,6 +494,7 @@ function fmtTime(s) {
   return `${m}:${sec}`;
 }
 
+// Refreshes the time display with current playhead position and active loop bounds.
 function updateTimeDisplay() {
   const el = document.getElementById("timeDisplay");
   if (!el || !state.ws) return;
@@ -493,6 +509,7 @@ function updateTimeDisplay() {
   el.textContent = label;
 }
 
+// Creates a new loop region on the waveform or moves the existing one to new bounds.
 function setOrUpdateLoopRegion(start, end) {
   if (!state.regions) return;
   if (state.loopRegion) {
@@ -510,6 +527,7 @@ function setOrUpdateLoopRegion(start, end) {
   updateLoopButtonStates();
 }
 
+// Removes the loop region from the waveform and resets related UI state.
 function clearLoop() {
   if (state.loopRegion) {
     try { state.loopRegion.remove(); } catch (e) { /* ignore */ }
@@ -519,6 +537,7 @@ function clearLoop() {
   updateLoopButtonStates();
 }
 
+// Reflects the current loop-on/off state in the Loop button's appearance.
 function updateLoopButtonStates() {
   const loopBtn = document.getElementById("loopBtn");
   if (loopBtn) loopBtn.classList.toggle("active", state.loop);
@@ -526,6 +545,7 @@ function updateLoopButtonStates() {
   updateTimeDisplay();
 }
 
+// Initialises WaveSurfer with the regions plugin and wires up all playback/loop event handlers.
 function initWavesurfer(audioUrl) {
   teardownWavesurfer();
   const ws = WaveSurfer.create({
@@ -587,6 +607,7 @@ function initWavesurfer(audioUrl) {
   });
 }
 
+// Renders the full task editor (waveform, predictions, annotation, controls) for the given task index.
 function select(idx) {
   state.current = idx;
   const t = state.tasks[idx];
@@ -715,12 +736,14 @@ function select(idx) {
   document.getElementById("markPending").onclick = () => save(false, "pending");
   document.getElementById("markReview").onclick = () => save(false, "review");
 
+  // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
     updateSuggestions();
   });
 
+  // Handle arrow-key navigation and Enter/Tab/Escape inside the autocomplete suggestion box.
   ta.addEventListener("keydown", (e) => {
     const box = document.getElementById("suggestionBox");
     if (!box || box.style.display === "none") return;
@@ -750,6 +773,7 @@ function select(idx) {
     setTimeout(closeSuggestions, 150);
   });
 
+  // Close autocomplete suggestions when the cursor moves without selecting a word.
   let _lastCursorPos = -1;
   ta.addEventListener("keyup", (e) => {
     if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(e.key)) {
@@ -771,6 +795,7 @@ function select(idx) {
   scrollSidebarToCurrent();
 }
 
+// Pins the loop region's start boundary to the current playhead position.
 function setLoopStartAtPlayhead() {
   if (!state.ws) return;
   const t = state.ws.getCurrentTime();
@@ -783,6 +808,7 @@ function setLoopStartAtPlayhead() {
   }
 }
 
+// Pins the loop region's end boundary to the current playhead position.
 function setLoopEndAtPlayhead() {
   if (!state.ws) return;
   const t = state.ws.getCurrentTime();
@@ -794,11 +820,13 @@ function setLoopEndAtPlayhead() {
   }
 }
 
+// Scrolls the sidebar so the active task item is visible.
 function scrollSidebarToCurrent() {
   const el = document.querySelector(".task-item.active");
   if (el) el.scrollIntoView({ block: "nearest" });
 }
 
+// Builds the deduplicated word pool for autocomplete from existing annotations, learned words, and word lists.
 function getSuggestionWords() {
   const idx = state.current;
   const seen = new Set();
@@ -823,6 +851,7 @@ function getSuggestionWords() {
   return words;
 }
 
+// Returns the screen pixel position of the textarea caret for positioning the suggestion dropdown.
 function getCursorPixelPos(ta) {
   const mirror = document.getElementById("taMirror");
   if (!mirror) return { x: 0, y: 0 };
@@ -848,6 +877,7 @@ function getCursorPixelPos(ta) {
   };
 }
 
+// Shows a contextual autocomplete dropdown for the word currently being typed.
 function updateSuggestions() {
   const ta = document.getElementById("annotation");
   const box = document.getElementById("suggestionBox");
@@ -877,6 +907,7 @@ function updateSuggestions() {
   box.style.top = (y + bh + 8 > vh ? y - bh - 4 : y + 4) + "px";
 }
 
+// Replaces the partial word at the cursor with the chosen autocomplete suggestion.
 function applySuggestion(word) {
   const ta = document.getElementById("annotation");
   if (!ta) return;
@@ -893,11 +924,13 @@ function applySuggestion(word) {
   state.saveTimer = setTimeout(() => autoSave(), 1500);
 }
 
+// Hides and clears the autocomplete suggestion dropdown.
 function closeSuggestions() {
   const box = document.getElementById("suggestionBox");
   if (box) { box.style.display = "none"; box.innerHTML = ""; }
 }
 
+// Extracts new words from a saved annotation and persists them to the server's learned-words store.
 function learnWords(text) {
   if (!text) return;
   const newWords = [];
@@ -918,6 +951,7 @@ function learnWords(text) {
   }).catch(() => {});
 }
 
+// Silently saves the current annotation as "autosave" status after a debounce delay.
 async function autoSave() {
   const ta = document.getElementById("annotation");
   if (!ta) return;
@@ -949,6 +983,7 @@ async function autoSave() {
   }
 }
 
+// Saves the current annotation with an explicit status and optionally advances to the next task.
 async function save(advance, statusOverride) {
   clearTimeout(state.saveTimer);
   const ta = document.getElementById("annotation");
@@ -985,6 +1020,7 @@ async function save(advance, statusOverride) {
   }
 }
 
+// Returns the subset of tasks matching the active sidebar filter.
 function getFilteredTasks() {
   return state.tasks.filter(t =>
     state.filter === "all" ? true :
@@ -995,6 +1031,7 @@ function getFilteredTasks() {
   );
 }
 
+// Returns the task index that follows the current one within the filtered list, or -1 if at the end.
 function getNextFilteredIndex(currentIdx) {
   const filtered = getFilteredTasks();
   const pos = filtered.findIndex(t => t.index === currentIdx);
@@ -1002,6 +1039,7 @@ function getNextFilteredIndex(currentIdx) {
   return filtered[pos + 1].index;
 }
 
+// Returns the task index that precedes the current one within the filtered list, or -1 if at the start.
 function getPrevFilteredIndex(currentIdx) {
   const filtered = getFilteredTasks();
   const pos = filtered.findIndex(t => t.index === currentIdx);
@@ -1009,17 +1047,20 @@ function getPrevFilteredIndex(currentIdx) {
   return filtered[pos - 1].index;
 }
 
+// Navigates to the task at idx if it is within bounds.
 function goto(idx) {
   if (idx < 0 || idx >= state.tasks.length) return;
   select(idx);
 }
 
+// Escapes a string for safe insertion into HTML to prevent XSS.
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
   })[c]);
 }
 
+// Wire up sidebar filter buttons to re-render the task list on click.
 document.querySelectorAll(".filter button").forEach(b => {
   b.onclick = () => {
     state.filter = b.dataset.filter;
@@ -1029,6 +1070,7 @@ document.querySelectorAll(".filter button").forEach(b => {
   };
 });
 
+// Global keyboard shortcuts for saving, navigating, playback, and loop controls.
 document.addEventListener("keydown", (e) => {
   const ta = document.getElementById("annotation");
   if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); save(true); return; }
@@ -1064,6 +1106,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// Syncs the autoplay toggle button with state and persists the preference to localStorage.
 function initAutoplayBtn() {
   const autoplayBtn = document.getElementById("autoplayBtn");
   if (!autoplayBtn) return;
@@ -1074,6 +1117,7 @@ function initAutoplayBtn() {
   };
 }
 
+// Applies the given colour theme to the document and saves the preference.
 function setTheme(theme) {
   const isLight = theme === "light";
   document.documentElement.classList.toggle("light-theme", isLight);
@@ -1084,6 +1128,7 @@ function setTheme(theme) {
   localStorage.setItem("labelin.theme", theme);
 }
 
+// Switches between light and dark themes.
 function toggleTheme() {
   setTheme(document.documentElement.classList.contains("light-theme") ? "dark" : "light");
 }

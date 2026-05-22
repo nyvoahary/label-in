@@ -1,3 +1,4 @@
+
 """Local Label-Studio-style audio transcription app.
 
 Each subfolder of the root that contains a `*.label_studio.json` is treated
