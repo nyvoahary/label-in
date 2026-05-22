@@ -97,6 +97,9 @@
     text-decoration: none; }
   .overflow-dropdown button:hover, .dropdown-link:hover { background: var(--panel-2); }
   .overflow-dropdown button + button, .dropdown-link + button, .dropdown-link + .dropdown-link { border-top: 1px solid var(--border); }
+  .lang-toggles { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .lang-label { font-size: 11px; color: var(--muted); flex: 1; }
+  .lang-check { font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
 
   .content { flex: 1; padding: 24px 32px; overflow-y: auto; }
   .meta-row { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-bottom: 14px; flex-wrap: wrap; }
@@ -200,6 +203,12 @@
       <div class="overflow-menu">
         <button class="btn overflow-btn" id="overflowBtn" title="More actions">⋯</button>
         <div class="overflow-dropdown" id="overflowDropdown">
+          <div class="lang-toggles">
+            <span class="lang-label">Suggestions</span>
+            <label class="lang-check"><input type="checkbox" id="langMG"> MG</label>
+            <label class="lang-check"><input type="checkbox" id="langFR"> FR</label>
+            <label class="lang-check"><input type="checkbox" id="langEN"> EN</label>
+          </div>
           <div id="nasActions"></div>
         </div>
       </div>
@@ -227,10 +236,30 @@ const state = {
   rate: 1,
   autoplay: localStorage.getItem("labelin.autoplay") !== "false",
   saveTimer: null,
-  mgWords: [],
+  wordLists: { mg: [], fr: [], en: [] },
+  learnedWords: [],
+  activeLangs: JSON.parse(localStorage.getItem("labelin.langs") || '["mg"]'),
 };
 
-fetch("/static/mg_words.json").then(r => r.json()).then(words => { state.mgWords = words; }).catch(() => {});
+const WORD_FILES = { mg: "/static/mg_words.json", fr: "/static/fr_words.json", en: "/static/en_words.json" };
+Object.entries(WORD_FILES).forEach(([lang, url]) => {
+  fetch(url).then(r => r.json()).then(words => { state.wordLists[lang] = words; }).catch(() => {});
+});
+fetch("/api/learned-words").then(r => r.json()).then(words => { state.learnedWords = words; }).catch(() => {});
+
+function initLangToggles() {
+  ["mg","fr","en"].forEach(lang => {
+    const el = document.getElementById("lang" + lang.toUpperCase());
+    if (!el) return;
+    el.checked = state.activeLangs.includes(lang);
+    el.onchange = () => {
+      if (el.checked) { if (!state.activeLangs.includes(lang)) state.activeLangs.push(lang); }
+      else { state.activeLangs = state.activeLangs.filter(l => l !== lang); }
+      localStorage.setItem("labelin.langs", JSON.stringify(state.activeLangs));
+    };
+  });
+}
+initLangToggles();
 
 const STORAGE_KEY = "labelin.lastProject";
 
@@ -783,8 +812,13 @@ function getSuggestionWords() {
       if (clean.length > 1 && !seen.has(clean)) { seen.add(clean); words.push(clean); }
     }
   }
-  for (const w of state.mgWords) {
+  for (const w of state.learnedWords) {
     if (!seen.has(w)) { seen.add(w); words.push(w); }
+  }
+  for (const lang of state.activeLangs) {
+    for (const w of (state.wordLists[lang] || [])) {
+      if (!seen.has(w)) { seen.add(w); words.push(w); }
+    }
   }
   return words;
 }
@@ -864,6 +898,26 @@ function closeSuggestions() {
   if (box) { box.style.display = "none"; box.innerHTML = ""; }
 }
 
+function learnWords(text) {
+  if (!text) return;
+  const newWords = [];
+  const existingSet = new Set(state.learnedWords);
+  for (const w of text.split(/\s+/)) {
+    const clean = w.replace(/["""''.,!?;:()\[\]{}\-–—]/g, "").toLowerCase();
+    if (clean.length > 1 && !existingSet.has(clean)) {
+      existingSet.add(clean);
+      newWords.push(clean);
+    }
+  }
+  if (!newWords.length) return;
+  state.learnedWords = [...state.learnedWords, ...newWords];
+  fetch("/api/learned-words", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ words: newWords }),
+  }).catch(() => {});
+}
+
 async function autoSave() {
   const ta = document.getElementById("annotation");
   if (!ta) return;
@@ -884,6 +938,7 @@ async function autoSave() {
     if (j.ok) {
       state.tasks[idx].annotation = text;
       state.tasks[idx].status = status;
+      learnWords(text);
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
       document.getElementById("saveStatus").classList.add("autosaved");
       renderSidebar();
@@ -913,6 +968,7 @@ async function save(advance, statusOverride) {
   if (j.ok) {
     state.tasks[idx].annotation = text;
     state.tasks[idx].status = status;
+    learnWords(text);
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");
     renderSidebar();

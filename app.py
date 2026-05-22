@@ -461,10 +461,54 @@ def api_nas_pull_stream(name: str):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+LEARNED_WORDS_FILE = ROOT / "static" / "learned_words.json"
+
+@app.route("/api/learned-words", methods=["GET"])
+def get_learned_words():
+    if LEARNED_WORDS_FILE.exists():
+        return jsonify(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")))
+    return jsonify([])
+
+@app.route("/api/learned-words", methods=["POST"])
+def add_learned_words():
+    new_words = request.json.get("words", [])
+    if not new_words:
+        return jsonify({"added": 0})
+    existing = set(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")) if LEARNED_WORDS_FILE.exists() else [])
+    added = [w for w in new_words if w not in existing]
+    if added:
+        existing.update(added)
+        LEARNED_WORDS_FILE.write_text(json.dumps(sorted(existing), ensure_ascii=False), "utf-8")
+    return jsonify({"added": len(added), "total": len(existing)})
+
+
 @app.route("/audio/<name>/<path:filename>")
 def serve_audio(name: str, filename: str):
     project = get_project(name)
     return send_from_directory(str(project["dir"]), filename)
+
+
+def seed_learned_words():
+    """Seed learned_words.json from existing annotations if the file doesn't exist yet."""
+    if LEARNED_WORDS_FILE.exists():
+        return
+    import re
+    seen = set()
+    for project in discover_projects():
+        ann_file = project["dir"] / "annotations.json"
+        if not ann_file.exists():
+            continue
+        data = json.loads(ann_file.read_text("utf-8"))
+        for task in data.values():
+            text = task.get("text", "") if isinstance(task, dict) else ""
+            if not text:
+                continue
+            for w in text.split():
+                clean = re.sub(r"[\"\"''.,!?;:()\[\]{}\-–—]", "", w).lower()
+                if len(clean) > 1:
+                    seen.add(clean)
+    LEARNED_WORDS_FILE.write_text(json.dumps(sorted(seen), ensure_ascii=False), "utf-8")
+    print(f"Seeded learned_words.json with {len(seen)} words from existing annotations.")
 
 
 if __name__ == "__main__":
@@ -475,4 +519,5 @@ if __name__ == "__main__":
         print(f"  - {p['name']}  ({p['tasks_file'].name})")
     if not projects:
         print("  (none found — each project must be a subfolder containing a *.label_studio.json)")
+    seed_learned_words()
     app.run(host="127.0.0.1", port=5000, debug=False)
