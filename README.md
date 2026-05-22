@@ -4,18 +4,22 @@ A lightweight, local Label-Studio-style web app for transcribing audio clips. Po
 
 ## Features
 
-- **Multi-project** — every subfolder of the root containing a `*.label_studio.json` is auto-discovered as a project. Switch between them from a dropdown in the sidebar; the last-used project is remembered.
-- **Sidebar task list** with done/pending status dots, click-to-jump, and filter (All / Pending / Done).
+- **Dashboard** — landing page showing overall completion stats across all projects with per-project breakdown (done / pending / review / autosave counts and a completion percentage).
+- **Multi-project** — every subfolder of the root containing a `*.label_studio.json` (or any `.json`) is auto-discovered as a project. Switch between them from a dropdown in the sidebar; the last-used project is remembered.
+- **Task statuses** — four states: `done`, `pending`, `review`, `autosave`. Autosave never overwrites a `done` or `review` task.
+- **Sidebar task list** with status dots, click-to-jump, and filter (All / Pending / Done).
 - **Live progress bar** per project (`<done> / <total>`).
 - **Audio player** with variable playback speed (0.5× – 1.5×), loop regions, and keyboard controls.
 - **Multiple predictions shown side by side** — one card per model, each showing the model name and confidence score.
 - **Click-to-insert words** — click any word in a prediction card to replace the word at your cursor in the annotation textarea. Select multiple words in a card then click to insert the whole selection.
 - **Per-card Copy ↓** — copies that model's full prediction into the textarea.
+- **Learned-words dictionary** — on startup, all `done` annotation words are merged into `static/learned_words.json` for autocomplete. The file is gitignored and rebuilt automatically.
 - **Atomic JSON persistence** — annotations saved to `annotations.json` inside each project folder; the original `*.label_studio.json` is never modified.
 - **Label-Studio-compatible export** at `/api/projects/<name>/export` (merges edits into the original task structure as `annotations`).
 - **Auto-resume** — on switching projects, jumps to the first pending task.
 - **Backup to NAS** — one-click backup of `annotations.json` to a network share (SMB/CIFS).
 - **Sync from NAS** — per-task merge of NAS annotations into local; newer `updated_at` wins per task, so work done on two machines on different tasks is safely combined. A `.bak` of the local file is saved before any overwrite.
+- **Pull project from NAS** — copy an entire project from the NAS to local with a streaming progress indicator.
 
 ## Project layout
 
@@ -23,7 +27,10 @@ A lightweight, local Label-Studio-style web app for transcribing audio clips. Po
 label-in/
 ├── app.py                       # Flask backend
 ├── templates/
-│   └── index.html               # Single-page UI
+│   ├── dashboard.html           # Dashboard UI (landing page)
+│   └── index.html               # Labeling UI
+├── static/
+│   └── learned_words.json       # Auto-built word list (gitignored)
 ├── requirements.txt
 ├── datasets/
 │   ├── speaker_one/             # Project 1
@@ -73,7 +80,15 @@ python app.py                    # uses datasets/ directory as the root
 python app.py path/to/root       # or point at another root folder
 ```
 
-Then open <http://127.0.0.1:5000>.
+Then open <http://127.0.0.1:5000> — this lands on the **Dashboard**. Click a project to open the labeling view.
+
+To make the app accessible to other devices on your local network:
+
+```bash
+flask run --host=0.0.0.0 --port=5000
+```
+
+Then access it from another device at `http://<your-local-ip>:5000`.
 
 ## Input format
 
@@ -155,21 +170,29 @@ Each project's `annotations.json` is keyed by audio filename:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | UI |
+| `GET` | `/` | Dashboard (landing page) |
+| `GET` | `/projects` | Labeling UI |
+| `GET` | `/api/dashboard` | Overall + per-project stats (done/pending/review/autosave) |
 | `GET` | `/api/projects` | List all projects with done/total counts |
 | `GET` | `/api/projects/<name>/tasks` | List tasks, merged with annotations |
 | `POST` | `/api/projects/<name>/tasks/<idx>` | Save annotation `{ text, status? }` |
 | `GET` | `/api/projects/<name>/export` | Tasks + annotations in Label Studio format |
 | `POST` | `/api/projects/<name>/backup` | Copy `annotations.json` to NAS |
 | `POST` | `/api/projects/<name>/sync` | Merge NAS annotations into local (per-task, newer wins) |
-| `GET` | `/audio/<name>/<filename>` | Serves audio from the project folder |
+| `GET` | `/api/sync-status` | NAS sync status per project |
+| `GET` | `/api/nas/projects` | List projects available on NAS |
+| `POST` | `/api/nas/projects/<name>/pull` | Copy a project from NAS to local |
+| `GET` | `/api/nas/projects/<name>/pull-stream` | Same as pull but streamed (SSE) with progress |
+| `GET` | `/api/learned-words` | Get the learned-words list |
+| `POST` | `/api/learned-words` | Add words to the learned-words list |
+| `GET` | `/audio/<name>/<filename>` | Serve audio from the project folder |
 
 ## NAS backup & sync
 
-The app can back up and sync `annotations.json` to a network share. Set `BACKUP_ROOT` in `app.py` to your mount point:
+The app can back up and sync `annotations.json` to a network share. Set the `BACKUP_ROOT` environment variable to your mount point before starting:
 
-```python
-BACKUP_ROOT = Path("/run/user/1000/gvfs/smb-share:server=192.168.88.26,share=transcription")
+```bash
+BACKUP_ROOT="/run/user/1000/gvfs/smb-share:server=192.168.88.26,share=transcription" python app.py
 ```
 
 The share must already be mounted before starting the app. On Linux, GNOME auto-mounts SMB shares under `/run/user/<uid>/gvfs/` when you connect via Files (Nautilus).

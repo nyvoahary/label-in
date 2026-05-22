@@ -200,6 +200,7 @@
         <input type="checkbox" id="themeBtn">
         <span class="toggle-track theme-track"><span class="toggle-thumb theme-thumb" id="themeIcon">🌙</span></span>
       </label>
+      <div id="nasActions"></div>
       <div class="overflow-menu">
         <button class="btn overflow-btn" id="overflowBtn" title="More actions">⋯</button>
         <div class="overflow-dropdown" id="overflowDropdown">
@@ -209,7 +210,6 @@
             <label class="lang-check"><input type="checkbox" id="langFR"> FR</label>
             <label class="lang-check"><input type="checkbox" id="langEN"> EN</label>
           </div>
-          <div id="nasActions"></div>
         </div>
       </div>
     </div>
@@ -941,6 +941,7 @@ async function autoSave() {
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
       document.getElementById("saveStatus").classList.add("autosaved");
       renderSidebar();
+      renderNasButtons(state.project);
     }
   } catch (e) {
     if (e.name === "AbortError") return;
@@ -971,6 +972,7 @@ async function save(advance, statusOverride) {
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");
     renderSidebar();
+    renderNasButtons(state.project);
     if (advance) {
       if (nextIdx >= 0) goto(nextIdx);
       else {
