@@ -489,11 +489,10 @@ def serve_audio(name: str, filename: str):
 
 
 def seed_learned_words():
-    """Seed learned_words.json from existing annotations if the file doesn't exist yet."""
-    if LEARNED_WORDS_FILE.exists():
-        return
+    """Merge all annotation words into learned_words.json on every startup."""
     import re
-    seen = set()
+    existing = set(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")) if LEARNED_WORDS_FILE.exists() else [])
+    before = len(existing)
     for project in discover_projects():
         ann_file = project["dir"] / "annotations.json"
         if not ann_file.exists():
@@ -508,9 +507,9 @@ def seed_learned_words():
             for w in text.split():
                 clean = re.sub(r"[\"\"''.,!?;:()\[\]{}\-–—]", "", w).lower()
                 if len(clean) > 1:
-                    seen.add(clean)
-    LEARNED_WORDS_FILE.write_text(json.dumps(sorted(seen), ensure_ascii=False), "utf-8")
-    print(f"Seeded learned_words.json with {len(seen)} words from existing annotations.")
+                    existing.add(clean)
+    LEARNED_WORDS_FILE.write_text(json.dumps(sorted(existing), ensure_ascii=False), "utf-8")
+    print(f"learned_words.json: {len(existing)} words (+{len(existing) - before} new from annotations).")
 
 
 if __name__ == "__main__":
