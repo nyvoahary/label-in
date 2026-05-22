@@ -72,6 +72,9 @@
   .toolbar button.primary { background: var(--accent); border-color: var(--accent); color: white; }
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar .meta { font-size: 12px; color: var(--muted); }
+  .toolbar-dashboard { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; text-decoration: none; }
+  .toolbar-dashboard:hover { border-color: var(--accent); color: var(--accent); }
   .toggle-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
   .toggle-switch input { display: none; }
   .toggle-track { width: 32px; height: 18px; background: var(--muted); border-radius: 9px;
@@ -187,15 +190,9 @@
 
   <main class="main">
     <div class="toolbar">
-      <button id="prevBtn">← Prev</button>
-      <button id="nextBtn">Next →</button>
+      <a class="toolbar-dashboard" href="/">Dashboard</a>
       <span class="meta" id="metaIdx">—</span>
       <div class="spacer"></div>
-      <label class="toggle-switch" title="Toggle autoplay on next task">
-        <input type="checkbox" id="autoplayBtn">
-        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        <span class="toggle-label">Auto</span>
-      </label>
       <label class="toggle-switch" title="Toggle theme">
         <input type="checkbox" id="themeBtn">
         <span class="toggle-track theme-track"><span class="toggle-thumb theme-thumb" id="themeIcon">🌙</span></span>
@@ -203,7 +200,6 @@
       <div class="overflow-menu">
         <button class="btn overflow-btn" id="overflowBtn" title="More actions">⋯</button>
         <div class="overflow-dropdown" id="overflowDropdown">
-          <a class="dropdown-link" href="/">Dashboard</a>
           <div id="nasActions"></div>
         </div>
       </div>
@@ -585,10 +581,13 @@ function select(idx) {
         <button id="playBtn">▶ Play</button>
         <button id="restartBtn" title="Restart from start (or loop start)">⟲ Restart</button>
         <span class="sep"></span>
-        <button id="loopStartBtn" title="Set loop start at playhead ([)">[ Loop start</button>
-        <button id="loopEndBtn" title="Set loop end at playhead (])">Loop end ]</button>
         <button id="loopBtn" class="${state.loop ? "active" : ""}" title="Toggle loop (L)">↻ Loop</button>
         <button id="clearLoopBtn" title="Clear loop region (\\)">✕ Clear</button>
+        <label class="toggle-switch" title="Toggle autoplay on next task" style="margin-left:4px">
+          <input type="checkbox" id="autoplayBtn">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-label">Auto</span>
+        </label>
         <span class="sep"></span>
         <span class="time" id="timeDisplay">0:00.00 / —</span>
         <div class="rates">
@@ -638,6 +637,7 @@ function select(idx) {
   `;
 
   initWavesurfer(audioUrl);
+  initAutoplayBtn();
 
   if (state.autoplay) {
     state.ws.on("ready", () => { state.ws.play(); }, { once: true });
@@ -657,8 +657,6 @@ function select(idx) {
     state.ws.setTime(start);
     state.ws.play();
   };
-  document.getElementById("loopStartBtn").onclick = () => setLoopStartAtPlayhead();
-  document.getElementById("loopEndBtn").onclick = () => setLoopEndAtPlayhead();
   document.getElementById("loopBtn").onclick = () => {
     state.loop = !state.loop;
     updateLoopButtonStates();
@@ -773,7 +771,7 @@ function scrollSidebarToCurrent() {
 }
 
 function getSuggestionWords() {
-  const idx = state.currentIndex;
+  const idx = state.current;
   const seen = new Set();
   const words = [];
   for (let i = 0; i < state.tasks.length; i++) {
@@ -973,8 +971,6 @@ document.querySelectorAll(".filter button").forEach(b => {
     renderSidebar();
   };
 });
-document.getElementById("prevBtn").onclick = () => goto(getPrevFilteredIndex(state.current));
-document.getElementById("nextBtn").onclick = () => goto(getNextFilteredIndex(state.current));
 
 document.addEventListener("keydown", (e) => {
   const ta = document.getElementById("annotation");
@@ -1011,12 +1007,15 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-const autoplayBtn = document.getElementById("autoplayBtn");
-autoplayBtn.checked = state.autoplay;
-autoplayBtn.onchange = () => {
-  state.autoplay = autoplayBtn.checked;
-  localStorage.setItem("labelin.autoplay", state.autoplay);
-};
+function initAutoplayBtn() {
+  const autoplayBtn = document.getElementById("autoplayBtn");
+  if (!autoplayBtn) return;
+  autoplayBtn.checked = state.autoplay;
+  autoplayBtn.onchange = () => {
+    state.autoplay = autoplayBtn.checked;
+    localStorage.setItem("labelin.autoplay", state.autoplay);
+  };
+}
 
 function setTheme(theme) {
   const isLight = theme === "light";
