@@ -136,6 +136,15 @@
     border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 16px;
     line-height: 1.5; font-family: inherit; resize: vertical; }
   textarea:focus { outline: none; border-color: var(--accent); }
+  #annotationWrap { position: relative; }
+  #suggestionBox { position: fixed; background: var(--panel-2);
+    border: 1px solid var(--accent); border-radius: 6px; z-index: 1000; max-height: 180px;
+    overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,.35); display: none; min-width: 140px; }
+  .suggestion-item { padding: 7px 12px; cursor: pointer; font-size: 14px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .suggestion-item:hover, .suggestion-item.active { background: var(--accent); color: #fff; }
+  #taMirror { position: absolute; visibility: hidden; pointer-events: none; white-space: pre-wrap;
+    word-wrap: break-word; overflow: hidden; top: 0; left: 0; }
 
   .actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
   .actions .save { background: var(--accent); border-color: var(--accent); color: white; }
@@ -222,7 +231,10 @@ const state = {
   rate: 1,
   autoplay: localStorage.getItem("labelin.autoplay") !== "false",
   saveTimer: null,
+  mgWords: [],
 };
+
+fetch("/static/mg_words.json").then(r => r.json()).then(words => { state.mgWords = words; }).catch(() => {});
 
 const STORAGE_KEY = "labelin.lastProject";
 
@@ -600,7 +612,11 @@ function select(idx) {
       `).join("")}
     </div>
     <div class="label">Annotation</div>
-    <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" ? "" : t.prediction) || "")}</textarea>
+    <div id="annotationWrap">
+      <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" ? "" : t.prediction) || "")}</textarea>
+      <div id="taMirror"></div>
+      <div id="suggestionBox"></div>
+    </div>
     <div class="actions">
       <button class="save" id="saveBtn">Save & Next</button>
       <button id="skipBtn">Skip →</button>
@@ -675,6 +691,48 @@ function select(idx) {
   ta.addEventListener("input", () => {
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
+    updateSuggestions();
+  });
+
+  ta.addEventListener("keydown", (e) => {
+    const box = document.getElementById("suggestionBox");
+    if (!box || box.style.display === "none") return;
+    const items = box.querySelectorAll(".suggestion-item");
+    let active = box.querySelector(".suggestion-item.active");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = active ? (active.nextElementSibling || items[0]) : items[0];
+      active?.classList.remove("active");
+      next?.classList.add("active");
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = active ? (active.previousElementSibling || items[items.length - 1]) : items[items.length - 1];
+      active?.classList.remove("active");
+      prev?.classList.add("active");
+    } else if (e.key === "Tab" || e.key === "Enter") {
+      if (active) {
+        e.preventDefault();
+        applySuggestion(active.dataset.word);
+      }
+    } else if (e.key === "Escape") {
+      closeSuggestions();
+    }
+  });
+
+  ta.addEventListener("blur", () => {
+    setTimeout(closeSuggestions, 150);
+  });
+
+  let _lastCursorPos = -1;
+  ta.addEventListener("keyup", (e) => {
+    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(e.key)) {
+      if (ta.selectionStart !== _lastCursorPos) closeSuggestions();
+    }
+    _lastCursorPos = ta.selectionStart;
+  });
+  ta.addEventListener("click", () => {
+    if (ta.selectionStart !== _lastCursorPos) closeSuggestions();
+    _lastCursorPos = ta.selectionStart;
   });
 
   if (state.ws) {
@@ -712,6 +770,100 @@ function setLoopEndAtPlayhead() {
 function scrollSidebarToCurrent() {
   const el = document.querySelector(".task-item.active");
   if (el) el.scrollIntoView({ block: "nearest" });
+}
+
+function getSuggestionWords() {
+  const idx = state.currentIndex;
+  const seen = new Set();
+  const words = [];
+  for (let i = 0; i < state.tasks.length; i++) {
+    if (i === idx) continue;
+    const text = state.tasks[i].annotation || "";
+    if (!text) continue;
+    for (const w of text.split(/\s+/)) {
+      const clean = w.replace(/["""''.,!?;:()\[\]{}\-–—]/g, "").toLowerCase();
+      if (clean.length > 1 && !seen.has(clean)) { seen.add(clean); words.push(clean); }
+    }
+  }
+  for (const w of state.mgWords) {
+    if (!seen.has(w)) { seen.add(w); words.push(w); }
+  }
+  return words;
+}
+
+function getCursorPixelPos(ta) {
+  const mirror = document.getElementById("taMirror");
+  if (!mirror) return { x: 0, y: 0 };
+  const cs = getComputedStyle(ta);
+  const props = ["font","fontSize","fontFamily","fontWeight","fontStyle","letterSpacing",
+    "lineHeight","padding","paddingTop","paddingRight","paddingBottom","paddingLeft",
+    "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth","width","boxSizing"];
+  props.forEach(p => mirror.style[p] = cs[p]);
+  mirror.style.width = ta.offsetWidth + "px";
+  mirror.style.height = ta.offsetHeight + "px";
+  mirror.style.overflowY = "scroll";
+  mirror.scrollTop = ta.scrollTop;
+
+  const before = ta.value.slice(0, ta.selectionStart);
+  mirror.innerHTML = escapeHtml(before) + '<span id="taCaret"> </span>';
+
+  const caret = document.getElementById("taCaret");
+  const mirrorRect = mirror.getBoundingClientRect();
+  const caretRect = caret.getBoundingClientRect();
+  return {
+    x: caretRect.left,
+    y: caretRect.bottom
+  };
+}
+
+function updateSuggestions() {
+  const ta = document.getElementById("annotation");
+  const box = document.getElementById("suggestionBox");
+  if (!ta || !box) return;
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos);
+  const after = ta.value.slice(pos);
+  const prefixMatch = before.match(/(\S+)$/);
+  const suffixMatch = after.match(/^(\S+)/);
+  if (!prefixMatch) { closeSuggestions(); return; }
+  const wholeWord = (prefixMatch[1] + (suffixMatch ? suffixMatch[1] : "")).toLowerCase();
+  if (wholeWord.length < 2) { closeSuggestions(); return; }
+  const words = getSuggestionWords().filter(w => w.startsWith(wholeWord) && w !== wholeWord);
+  if (!words.length) { closeSuggestions(); return; }
+  box.innerHTML = words.slice(0, 8).map(w =>
+    `<div class="suggestion-item" data-word="${escapeHtml(w)}">${escapeHtml(w)}</div>`
+  ).join("");
+  box.querySelectorAll(".suggestion-item").forEach(item => {
+    item.addEventListener("mousedown", (e) => { e.preventDefault(); applySuggestion(item.dataset.word); });
+  });
+  box.style.display = "block";
+
+  const { x, y } = getCursorPixelPos(ta);
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const bw = box.offsetWidth || 160, bh = box.offsetHeight || 100;
+  box.style.left = Math.min(x, vw - bw - 8) + "px";
+  box.style.top = (y + bh + 8 > vh ? y - bh - 4 : y + 4) + "px";
+}
+
+function applySuggestion(word) {
+  const ta = document.getElementById("annotation");
+  if (!ta) return;
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos);
+  const after = ta.value.slice(pos);
+  const newBefore = before.replace(/(\S+)$/, word);
+  const afterTrimmed = after.replace(/^(\S+)/, "");
+  ta.value = newBefore + afterTrimmed;
+  const newPos = newBefore.length;
+  ta.setSelectionRange(newPos, newPos);
+  closeSuggestions();
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(() => autoSave(), 1500);
+}
+
+function closeSuggestions() {
+  const box = document.getElementById("suggestionBox");
+  if (box) { box.style.display = "none"; box.innerHTML = ""; }
 }
 
 async function autoSave() {
