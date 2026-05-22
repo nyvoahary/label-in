@@ -938,7 +938,6 @@ async function autoSave() {
     if (j.ok) {
       state.tasks[idx].annotation = text;
       state.tasks[idx].status = status;
-      learnWords(text);
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
       document.getElementById("saveStatus").classList.add("autosaved");
       renderSidebar();
@@ -968,7 +967,7 @@ async function save(advance, statusOverride) {
   if (j.ok) {
     state.tasks[idx].annotation = text;
     state.tasks[idx].status = status;
-    learnWords(text);
+    if (status === "done") learnWords(text);
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");
     renderSidebar();

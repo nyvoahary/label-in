@@ -500,7 +500,9 @@ def seed_learned_words():
             continue
         data = json.loads(ann_file.read_text("utf-8"))
         for task in data.values():
-            text = task.get("text", "") if isinstance(task, dict) else ""
+            if not isinstance(task, dict) or task.get("status") != "done":
+                continue
+            text = task.get("text", "")
             if not text:
                 continue
             for w in text.split():
