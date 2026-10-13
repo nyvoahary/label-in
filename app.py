@@ -522,4 +522,4 @@ if __name__ == "__main__":
     if not projects:
         print("  (none found — each project must be a subfolder containing a *.label_studio.json)")
     seed_learned_words()
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "5000")), debug=False)
