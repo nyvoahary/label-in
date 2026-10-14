@@ -344,7 +344,7 @@ def api_sync(name: str):
 @app.route("/api/sync-status")
 def api_sync_status():
     if BACKUP_ROOT is None or not BACKUP_ROOT.exists():
-        return jsonify({"nas_accessible": False, "projects": {}})
+        return jsonify({"nas_configured": BACKUP_ROOT is not None, "nas_accessible": False, "projects": {}})
     out = {}
     for p in discover_projects():
         name = p["name"]
@@ -369,7 +369,7 @@ def api_sync_status():
             "nas_ahead": remote_max > local_max,
             "in_sync": local_max == remote_max and bool(local_max),
         }
-    return jsonify({"nas_accessible": True, "projects": out})
+    return jsonify({"nas_configured": True, "nas_accessible": True, "projects": out})
 
 
 @app.route("/api/nas/projects")
@@ -462,7 +462,8 @@ def api_nas_pull_stream(name: str):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-LEARNED_WORDS_FILE = ROOT / "static" / "learned_words.json"
+# Override with LEARNED_WORDS_FILE to keep the list on persistent storage (e.g. in Docker).
+LEARNED_WORDS_FILE = Path(os.environ.get("LEARNED_WORDS_FILE", ROOT / "static" / "learned_words.json"))
 
 @app.route("/api/learned-words", methods=["GET"])
 def get_learned_words():

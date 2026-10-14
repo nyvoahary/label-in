@@ -162,26 +162,28 @@
 </div>
 
 <script>
-const state = { local: { projects: [], overall: null }, nas: { projects: [], accessible: false }, sync: {}, importing: {}, filter: "all" };
+const state = { local: { projects: [], overall: null }, nas: { projects: [], accessible: false, configured: true }, sync: {}, importing: {}, filter: "all" };
 
 async function load() {
+  // NAS endpoints return 503 with an error body when the NAS is not configured or not mounted.
   const [dash, nas, sync] = await Promise.all([
     fetch("/api/dashboard").then(r => r.json()).catch(() => null),
-    fetch("/api/nas/projects").then(r => r.json()).catch(() => null),
-    fetch("/api/sync-status").then(r => r.json()).catch(() => null),
+    fetch("/api/nas/projects").then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch("/api/sync-status").then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
 
   if (dash) {
     state.local.overall = dash.overall;
     state.local.projects = dash.projects;
   }
-  if (nas) {
+  if (nas && Array.isArray(nas.projects)) {
     state.nas.projects = nas.projects;
     state.nas.accessible = true;
   }
   if (sync) {
     state.sync = sync.projects || {};
     if (!sync.nas_accessible) state.nas.accessible = false;
+    if (sync.nas_configured === false) state.nas.configured = false;
   }
   render();
 }
@@ -261,7 +263,7 @@ function render() {
     <div class="section-title">
       Projects
       <span>(${filteredCards.length})</span>
-      ${state.nas.accessible ? `<span class="badge">NAS connected</span>` : `<span class="badge" style="color:var(--review);border-color:rgba(239,68,68,0.3)">NAS offline</span>`}
+      ${!state.nas.configured ? "" : state.nas.accessible ? `<span class="badge">NAS connected</span>` : `<span class="badge" style="color:var(--review);border-color:rgba(239,68,68,0.3)">NAS offline</span>`}
     </div>
 
     <div class="project-grid">
@@ -335,12 +337,12 @@ function renderLocalCard(p, onNas) {
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div></div>
         <span class="pct ${pctColor}">${pct}%</span>
       </div>
-      <div class="card-divider"></div>
+      ${state.nas.configured ? `<div class="card-divider"></div>
       <div class="nas-row">
         <span class="nas-label">NAS</span>
         ${nasHtml}
       </div>
-      <div id="action-status-${esc(p.name)}"></div>
+      <div id="action-status-${esc(p.name)}"></div>` : ""}
     </div>`;
 }
 

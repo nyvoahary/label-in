@@ -12,7 +12,8 @@ FROM python:3.12.13-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
-    PORT=8080
+    PORT=8080 \
+    LEARNED_WORDS_FILE=/app/datasets/learned_words.json
 WORKDIR /app
 COPY --from=builder /app/.venv .venv/
 COPY . .
