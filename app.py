@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
+import tempfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_from_directory, abort, render_template
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory, abort, render_template
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -40,14 +43,11 @@ app = Flask(__name__, template_folder=str(ROOT / "templates"))
 def discover_projects() -> list[dict]:
     """Find every subfolder of DATA_ROOT that contains a *.label_studio.json."""
     projects = []
-    for sub in sorted(p for p in DATA_ROOT.iterdir() if p.is_dir()):
-        ls = next(sub.glob("*.label_studio.json"), None)
+    # Hidden folders (e.g. .uploads staging) are never projects.
+    for sub in sorted(p for p in DATA_ROOT.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        ls = find_tasks_file(sub)
         if ls is None:
-            # fall back to any .json so users with other names still work
-            others = [p for p in sub.glob("*.json") if p.name != "annotations.json"]
-            if not others:
-                continue
-            ls = others[0]
+            continue
         projects.append({
             "name": sub.name,
             "dir": sub,
@@ -55,6 +55,15 @@ def discover_projects() -> list[dict]:
             "annotations_file": sub / "annotations.json",
         })
     return projects
+
+
+def find_tasks_file(folder: Path) -> Path | None:
+    ls = next(folder.glob("*.label_studio.json"), None)
+    if ls is None:
+        # fall back to any .json so users with other names still work
+        others = sorted(p for p in folder.glob("*.json") if p.name not in ("annotations.json", "learned_words.json"))
+        ls = others[0] if others else None
+    return ls
 
 
 def get_project(name: str) -> dict:
@@ -460,6 +469,148 @@ def api_nas_pull_stream(name: str):
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# --- Upload a project folder from the browser ---------------------------------
+# Files are sent one per request into DATA_ROOT/.uploads/<name>/, then "finish"
+# validates the folder and moves it into place (or merges into an existing project).
+
+UPLOADS_DIR = DATA_ROOT / ".uploads"
+PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,99}$")
+UPLOAD_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".json"}
+
+
+def _staging_dir(name: str) -> Path:
+    if not PROJECT_NAME_RE.match(name):
+        abort(400, f"Invalid project name: {name}")
+    return UPLOADS_DIR / name
+
+
+def _check_upload_filename(filename: str) -> None:
+    if (Path(filename).name != filename or filename.startswith(".")
+            or Path(filename).suffix.lower() not in UPLOAD_EXTS):
+        abort(400, f"File not allowed: {filename}")
+
+
+def _missing_audio(tasks_file: Path, *folders: Path) -> list[str]:
+    with tasks_file.open("r", encoding="utf-8") as f:
+        tasks = json.load(f)
+    wanted = {task_audio(t) for t in tasks if task_audio(t)}
+    return sorted(a for a in wanted if not any((d / a).is_file() for d in folders))
+
+
+@app.route("/api/uploads/<name>")
+def api_upload_status(name: str):
+    """Files already staged for this upload, so an interrupted upload can resume."""
+    staging = _staging_dir(name)
+    files = {p.name: p.stat().st_size for p in staging.iterdir() if p.is_file()} if staging.is_dir() else {}
+    return jsonify({"files": files, "exists": (DATA_ROOT / name).exists()})
+
+
+@app.route("/api/uploads/<name>/files/<filename>", methods=["PUT"])
+def api_upload_file(name: str, filename: str):
+    staging = _staging_dir(name)
+    _check_upload_filename(filename)
+    staging.mkdir(parents=True, exist_ok=True)
+    dest = staging / filename
+    tmp = staging / f".{filename}.part"
+    with tmp.open("wb") as f:
+        shutil.copyfileobj(request.stream, f, 1024 * 1024)
+    tmp.replace(dest)
+    return jsonify({"ok": True, "size": dest.stat().st_size})
+
+
+@app.route("/api/uploads/<name>", methods=["DELETE"])
+def api_upload_cancel(name: str):
+    shutil.rmtree(_staging_dir(name), ignore_errors=True)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/uploads/<name>/finish", methods=["POST"])
+def api_upload_finish(name: str):
+    staging = _staging_dir(name)
+    if not staging.is_dir():
+        return jsonify({"error": "Nothing uploaded for this project"}), 404
+    mode = (request.json or {}).get("mode", "new")
+    target = DATA_ROOT / name
+
+    if mode == "new":
+        if target.exists():
+            return jsonify({"error": f"Project '{name}' already exists", "exists": True}), 409
+        tasks_file = find_tasks_file(staging)
+        if tasks_file is None:
+            return jsonify({"error": "No *.label_studio.json in the uploaded folder"}), 400
+        missing = _missing_audio(tasks_file, staging)
+        if missing:
+            return jsonify({"error": f"{len(missing)} audio file(s) missing", "missing": missing[:50]}), 400
+        for leftover in staging.glob(".*.part"):
+            leftover.unlink()
+        staging.replace(target)
+        seed_learned_words()
+        return jsonify({"action": "created", "name": name})
+
+    if mode != "merge":
+        return jsonify({"error": f"Unknown mode: {mode}"}), 400
+    if not target.is_dir():
+        return jsonify({"error": f"Project '{name}' does not exist"}), 404
+
+    # The server's tasks file is kept; the uploaded one is only used if the server has none.
+    tasks_file = find_tasks_file(target) or find_tasks_file(staging)
+    if tasks_file is None:
+        return jsonify({"error": "No *.label_studio.json on the server or in the upload"}), 400
+    missing = _missing_audio(tasks_file, target, staging)
+    if missing:
+        return jsonify({"error": f"{len(missing)} audio file(s) missing", "missing": missing[:50]}), 400
+
+    added_files = 0
+    for src in staging.iterdir():
+        if not src.is_file() or src.name.startswith(".") or src.name == "annotations.json":
+            continue
+        dst = target / src.name
+        if not dst.exists():
+            shutil.move(str(src), dst)
+            added_files += 1
+
+    pulled = kept = 0
+    uploaded_ann = staging / "annotations.json"
+    if uploaded_ann.exists():
+        project = get_project(name)
+        local = load_annotations(project)
+        merged, pulled, kept = _merge_annotations(local, json.loads(uploaded_ann.read_text("utf-8")))
+        if pulled:
+            if project["annotations_file"].exists():
+                shutil.copyfile(project["annotations_file"], str(project["annotations_file"]) + ".bak")
+            save_annotations(project, merged)
+
+    shutil.rmtree(staging, ignore_errors=True)
+    if pulled:
+        seed_learned_words()
+    return jsonify({"action": "merged", "name": name, "added_files": added_files,
+                    "annotations_updated": pulled, "annotations_kept": kept})
+
+
+# --- Download a project as a zip -----------------------------------------------
+
+@app.route("/api/projects/<name>/download")
+def api_download(name: str):
+    """?audio=1 → full project folder; otherwise annotations + tasks file only."""
+    project = get_project(name)
+    full = request.args.get("audio") == "1"
+    if full:
+        files = sorted(p for p in project["dir"].iterdir()
+                       if p.is_file() and not p.name.endswith((".tmp", ".part")))
+    else:
+        files = [p for p in (project["tasks_file"], project["annotations_file"]) if p.exists()]
+    buf = tempfile.TemporaryFile()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for p in files:
+            # Audio is already compressed or not worth the CPU; only deflate JSON.
+            method = zipfile.ZIP_DEFLATED if p.suffix == ".json" else zipfile.ZIP_STORED
+            zf.write(p, f"{name}/{p.name}", compress_type=method)
+    buf.seek(0)
+    suffix = "" if full else "_annotations"
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"{name}{suffix}.zip")
 
 
 # Override with LEARNED_WORDS_FILE to keep the list on persistent storage (e.g. in Docker).

@@ -133,6 +133,24 @@
   .import-progress .bar-fill { transition: width .2s ease; }
   .import-progress .import-status { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
+  .card-actions { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .card-actions .lbl { color: var(--muted); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; margin-right: auto; }
+  .card-actions a { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; text-decoration: none; }
+  .card-actions a:hover { border-color: var(--accent); }
+
+  #uploadPanel { max-width: 1080px; margin: 0 auto; padding: 28px 24px 0; }
+  #uploadPanel .box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  #uploadPanel .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+  #uploadPanel .head strong { margin-right: auto; }
+  #uploadPanel .status { font-size: 12px; color: var(--muted); margin-top: 8px; white-space: pre-wrap; }
+  #uploadPanel .status.error { color: var(--review); }
+  #uploadPanel .status.ok { color: var(--done); }
+  #uploadPanel button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  #uploadPanel button:hover { border-color: var(--accent); }
+
   .empty-state { padding: 80px 20px; text-align: center; color: var(--muted); }
   .empty-state h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
   .empty-state p { font-size: 13px; margin: 0; }
@@ -150,9 +168,13 @@
   <h1>Dashboard</h1>
   <span class="sub">{{ root }}</span>
   <div class="spacer"></div>
+  <button id="uploadBtn" title="Upload a project folder (audio + *.label_studio.json)">Upload project</button>
+  <input type="file" id="uploadInput" webkitdirectory multiple hidden>
   <a href="/projects" id="projectsLink">Go to labeling →</a>
   <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
 </div>
+
+<div id="uploadPanel" hidden></div>
 
 <div class="container" id="app">
   <div class="empty-state">
@@ -282,7 +304,7 @@ function render() {
   // Wire up click-to-label on local cards
   document.querySelectorAll(".project-card.clickable").forEach(el => {
     el.addEventListener("click", (e) => {
-      if (e.target.closest(".nas-row")) return;
+      if (e.target.closest(".nas-row, .card-actions")) return;
       const name = el.dataset.name;
       localStorage.setItem("labelin.lastProject", name);
       window.location.href = "/projects";
@@ -336,6 +358,12 @@ function renderLocalCard(p, onNas) {
       <div class="prog-row">
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div></div>
         <span class="pct ${pctColor}">${pct}%</span>
+      </div>
+      <div class="card-divider"></div>
+      <div class="card-actions">
+        <span class="lbl">Download</span>
+        <a href="/api/projects/${encodeURIComponent(p.name)}/download" download title="annotations.json + tasks file">Annotations .zip</a>
+        <a href="/api/projects/${encodeURIComponent(p.name)}/download?audio=1" download title="Whole project folder, audio included">Full .zip</a>
       </div>
       ${state.nas.configured ? `<div class="card-divider"></div>
       <div class="nas-row">
@@ -438,6 +466,163 @@ function importProject(name, btn) {
     btn.textContent = "Retry";
     es.close();
   };
+}
+
+// --- Upload a project folder ---------------------------------------------------
+// Files go one per request to /api/uploads/<name>/files/<file> (staged server-side,
+// so re-picking the same folder resumes), then /finish moves or merges the project.
+const UPLOAD_EXTS = [".wav", ".mp3", ".flac", ".ogg", ".m4a", ".json"];
+const UPLOAD_CONCURRENCY = 3;
+let uploadCancelled = false;
+
+document.getElementById("uploadBtn").onclick = () => document.getElementById("uploadInput").click();
+document.getElementById("uploadInput").onchange = (e) => {
+  const files = [...e.target.files];
+  e.target.value = "";  // allow picking the same folder again
+  if (files.length) uploadFolder(files);
+};
+
+function showUploadPanel(name) {
+  const panel = document.getElementById("uploadPanel");
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="box">
+      <div class="head"><strong>Upload · ${esc(name)}</strong><button id="uploadClose">Cancel</button></div>
+      <div class="bar-track"><div class="bar-fill" id="uploadBar" style="width:0%;background:var(--accent)"></div></div>
+      <div class="status" id="uploadStatus">Checking folder…</div>
+    </div>`;
+  document.getElementById("uploadClose").onclick = async () => {
+    uploadCancelled = true;
+    panel.hidden = true;
+    await fetch(`/api/uploads/${encodeURIComponent(name)}`, { method: "DELETE" }).catch(() => {});
+  };
+}
+
+function uploadStatus(text, cls = "") {
+  const el = document.getElementById("uploadStatus");
+  if (el) { el.textContent = text; el.className = "status " + cls; }
+}
+
+function uploadDone(ok) {
+  const btn = document.getElementById("uploadClose");
+  if (btn) btn.textContent = "Close";
+  const bar = document.getElementById("uploadBar");
+  if (bar && ok) { bar.style.width = "100%"; bar.style.background = "var(--done)"; }
+}
+
+async function errorText(r) {
+  const body = await r.text();
+  try { return JSON.parse(body).error || body; } catch { return body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200); }
+}
+
+async function uploadFolder(all) {
+  uploadCancelled = false;
+  const name = all[0].webkitRelativePath.split("/")[0];
+  showUploadPanel(name);
+  if (!/^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,99}$/.test(name)) {
+    uploadStatus(`Folder name "${name}" is not allowed. Use letters, digits, spaces, _ . -`, "error");
+    return uploadDone(false);
+  }
+
+  // Only files directly inside the folder; skip subfolders, hidden and system files.
+  const files = all.filter(f => {
+    const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
+    return f.webkitRelativePath.split("/").length === 2 && !f.name.startsWith(".") && UPLOAD_EXTS.includes(ext);
+  });
+  const exists = state.local.projects.some(p => p.name === name);
+  const tasksFile = files.find(f => f.name.endsWith(".label_studio.json"))
+    || files.find(f => f.name.endsWith(".json") && f.name !== "annotations.json");
+
+  if (!exists) {
+    if (!tasksFile) {
+      uploadStatus("No *.label_studio.json in this folder, so it can't become a project.", "error");
+      return uploadDone(false);
+    }
+    let tasks;
+    try { tasks = JSON.parse(await tasksFile.text()); } catch (e) {
+      uploadStatus(`${tasksFile.name} is not valid JSON: ${e.message}`, "error");
+      return uploadDone(false);
+    }
+    const names = new Set(files.map(f => f.name));
+    const missing = [...new Set(tasks.map(t => (t.data || {}).audio).filter(Boolean))].filter(a => !names.has(a));
+    if (missing.length) {
+      uploadStatus(`${missing.length} audio file(s) listed in ${tasksFile.name} are not in the folder:\n`
+        + missing.slice(0, 10).join("\n") + (missing.length > 10 ? "\n…" : ""), "error");
+      return uploadDone(false);
+    }
+  } else if (!confirm(`"${name}" already exists on the server.\n\nMerge into it? Annotations are merged clip by clip `
+      + `(newest edit wins, a .bak is kept) and missing audio files are added. Existing audio is not replaced.`)) {
+    document.getElementById("uploadPanel").hidden = true;
+    return;
+  }
+
+  // Resume: skip files already staged with the same size.
+  const st = await fetch(`/api/uploads/${encodeURIComponent(name)}`).then(r => r.json()).catch(() => ({ files: {} }));
+  const todo = files.filter(f => st.files[f.name] !== f.size);
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  let doneBytes = totalBytes - todo.reduce((s, f) => s + f.size, 0);
+  let doneFiles = files.length - todo.length;
+  const failed = [];
+
+  const progress = () => {
+    const bar = document.getElementById("uploadBar");
+    if (bar) bar.style.width = (totalBytes ? (doneBytes / totalBytes) * 100 : 100) + "%";
+    uploadStatus(`${doneFiles} / ${files.length} files · ${fmtBytes(doneBytes)} / ${fmtBytes(totalBytes)}`);
+  };
+  progress();
+
+  async function sendOne(f) {
+    const url = `/api/uploads/${encodeURIComponent(name)}/files/${encodeURIComponent(f.name)}`;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const r = await fetch(url, { method: "PUT", body: f });
+        if (r.ok) return;
+        if (r.status < 500) throw Object.assign(new Error(await errorText(r)), { fatal: true });
+      } catch (e) {
+        if (e.fatal || attempt === 3) throw e;
+      }
+      await new Promise(res => setTimeout(res, 1000 * attempt));
+    }
+    throw new Error("server error");
+  }
+
+  const queue = [...todo];
+  await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, async () => {
+    while (queue.length && !uploadCancelled) {
+      const f = queue.shift();
+      try {
+        await sendOne(f);
+        doneBytes += f.size;
+        doneFiles++;
+        progress();
+      } catch (e) {
+        failed.push(`${f.name}: ${e.message}`);
+      }
+    }
+  }));
+  if (uploadCancelled) return;
+  if (failed.length) {
+    uploadStatus(`${failed.length} file(s) failed. Pick the same folder again to resume:\n`
+      + failed.slice(0, 10).join("\n"), "error");
+    return uploadDone(false);
+  }
+
+  uploadStatus("Finishing…");
+  const mode = exists ? "merge" : "new";
+  const r = await fetch(`/api/uploads/${encodeURIComponent(name)}/finish`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    uploadStatus((j.error || `Failed (HTTP ${r.status})`) + (j.missing ? ":\n" + j.missing.slice(0, 10).join("\n") : ""), "error");
+    return uploadDone(false);
+  }
+  const j = await r.json();
+  uploadStatus(j.action === "created"
+    ? `✓ Project "${name}" created (${files.length} files).`
+    : `✓ Merged into "${name}": ${j.added_files} new file(s), ${j.annotations_updated} annotation(s) updated.`, "ok");
+  uploadDone(true);
+  load();
 }
 
 function fmtBytes(bytes) {
