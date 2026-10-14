@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Label-in · {{ root }}</title>
+<script>
+  try { if (localStorage.getItem("labelin.theme") === "light") document.documentElement.classList.add("light-theme"); } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1f242d; --border: #2a3140;
+    --text: #e6e8ee; --muted: #8a93a6; --accent: #f59e0b;
+    --done: #22c55e; --pending: #eab308; --review: #ef4444;
+  }
+  .light-theme { --bg: #f7f8fb; --panel: #ffffff; --panel-2: #f3f6fb; --border: #d9e2ec;
+    --text: #111827; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+
+  .toolbar { padding: 10px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;
+    align-items: center; background: var(--panel); flex-wrap: wrap; }
+  .toolbar .logo { filter: invert(1); height: 32px; margin-right: 6px; }
+  .light-theme .toolbar .logo { filter: none; }
+  .toolbar h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .who { font-size: 12px; color: var(--muted); }
+  .btn, .toolbar a { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; text-decoration: none;
+    font-family: inherit; white-space: nowrap; }
+  .btn:hover, .toolbar a:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger:hover { border-color: var(--review); color: var(--review); }
+  .btn.small { padding: 3px 9px; font-size: 11px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px 24px 60px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 20px; }
+  .tabs button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  .panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+  .panel h2 .spacer { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+    font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions .btn { margin-left: 4px; }
+  .muted { color: var(--muted); }
+  .tag { font-size: 10px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--border); color: var(--muted); margin-left: 6px; }
+  .people { font-size: 11px; color: var(--muted); }
+  .people b { color: var(--text); font-weight: 600; }
+
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 13px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input.pw { font-family: ui-monospace, monospace; min-width: 200px; }
+  .msg { font-size: 12px; margin-top: 10px; min-height: 16px; white-space: pre-wrap; }
+  .msg.error { color: var(--review); }
+  .msg.ok { color: var(--done); }
+  .inline-form { background: var(--panel-2); }
+  .inline-form td { padding: 10px 8px; }
+
+  .bar-track { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; min-width: 80px; }
+  .bar-fill { height: 100%; background: var(--accent); }
+  .bar-fill.full { background: var(--done); }
+
+  @media (max-width: 700px) { .container { padding: 16px; } .toolbar { padding: 10px 16px; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <img src="/static/logo.png" alt="Logo" class="logo">
+  <h1>Admin</h1>
+  <div class="spacer"></div>
+  <span class="who" id="who"></span>
+  <a href="/">Dashboard</a>
+  <a href="/projects">Labeling</a>
+  <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button class="btn">Log out</button></form>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <button data-tab="users">Users</button>
+    <button data-tab="projects">Projects</button>
+    <button data-tab="trash">Trash</button>
+  </div>
+  <div id="tab"></div>
+</div>
+
+<script>
+const state = { tab: "users", me: null, users: [], projects: [], trash: [], editing: null };
+
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const r = await fetch(url, opts);
+  if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); throw new Error("Signed out"); }
+  const text = await r.text();
+  let j; try { j = JSON.parse(text); } catch { j = { error: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) }; }
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
+}
+function fmtBytes(b) {
+  if (b < 1024) return b + " B";
+  if (b < 1024 ** 2) return (b / 1024).toFixed(1) + " KB";
+  if (b < 1024 ** 3) return (b / 1024 ** 2).toFixed(1) + " MB";
+  return (b / 1024 ** 3).toFixed(2) + " GB";
+}
+function fmtDate(iso) {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+// 16 characters from an unambiguous alphabet, from the browser's secure random generator.
+function generatePassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint32Array(16));
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join("");
+}
+function setMsg(id, text, cls = "") {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = text; el.className = "msg " + cls; }
+}
+
+// --- Users -------------------------------------------------------------------
+function renderUsers() {
+  const admins = state.users.filter(u => u.role === "admin").length;
+  const rows = state.users.map(u => {
+    const lastAdmin = u.role === "admin" && admins === 1;
+    const row = `
+      <tr>
+        <td><b>${esc(u.name)}</b>${u.name === state.me ? `<span class="tag">you</span>` : ""}</td>
+        <td><select data-role="${esc(u.name)}" ${lastAdmin ? "disabled title=\"Last admin\"" : ""}>
+              <option value="annotator" ${u.role === "annotator" ? "selected" : ""}>Annotator</option>
+              <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+            </select></td>
+        <td class="muted">${esc(fmtDate(u.last_login))}</td>
+        <td class="actions">
+          <button class="btn small" data-reset="${esc(u.name)}">Reset password</button>
+          <button class="btn small danger" data-remove="${esc(u.name)}" ${lastAdmin ? "disabled title=\"Last admin\"" : ""}>Remove</button>
+        </td>
+      </tr>`;
+    const form = state.editing !== u.name ? "" : `
+      <tr class="inline-form"><td colspan="4">
+        <div class="form-row">
+          <span class="muted" style="font-size:12px">New password for <b>${esc(u.name)}</b>:</span>
+          <input class="pw" id="resetPw" type="text" autocomplete="new-password" spellcheck="false" minlength="8">
+          <button class="btn small" id="resetGen">Generate</button>
+          <button class="btn small primary" id="resetSave">Save</button>
+          <button class="btn small" id="resetCancel">Cancel</button>
+        </div>
+        <div class="msg" id="resetMsg"></div>
+      </td></tr>`;
+    return row + form;
+  }).join("");
+
+  document.getElementById("tab").innerHTML = `
+    <div class="panel">
+      <h2>Accounts <span class="muted">(${state.users.length})</span></h2>
+      <p class="hint">Admins can upload and manage projects and accounts. Annotators can label and download.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>User</th><th>Role</th><th>Last login</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="msg" id="usersMsg"></div>
+    </div>
+    <div class="panel">
+      <h2>Add an account</h2>
+      <p class="hint">Give the password to the person privately. They can't change it themselves yet, so reset it here if needed.</p>
+      <form class="form-row" id="addForm" autocomplete="off">
+        <input id="newName" placeholder="username" pattern="[A-Za-z0-9_\\-]{1,64}" required spellcheck="false" autocapitalize="none">
+        <select id="newRole"><option value="annotator">Annotator</option><option value="admin">Admin</option></select>
+        <input class="pw" id="newPw" type="text" placeholder="password (8+ characters)" autocomplete="new-password" minlength="8" required spellcheck="false">
+        <button type="button" class="btn" id="genPw">Generate</button>
+        <button class="btn primary">Add account</button>
+      </form>
+      <div class="msg" id="addMsg"></div>
+    </div>`;
+
+  document.getElementById("genPw").onclick = () => { document.getElementById("newPw").value = generatePassword(); };
+  document.getElementById("addForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("newName").value.trim();
+    const role = document.getElementById("newRole").value;
+    const password = document.getElementById("newPw").value;
+    try {
+      await api("POST", "/api/admin/users", { username, password, role });
+      await loadUsers();
+      setMsg("addMsg", `✓ Added ${username} (${role}). Remember to give them the password.`, "ok");
+    } catch (err) { setMsg("addMsg", err.message, "error"); }
+  };
+  document.querySelectorAll("[data-role]").forEach(sel => sel.onchange = async () => {
+    const name = sel.dataset.role;
+    try {
+      await api("POST", `/api/admin/users/${encodeURIComponent(name)}`, { role: sel.value });
+      await loadUsers();
+      setMsg("usersMsg", `✓ ${name} is now ${sel.value}.`, "ok");
+      if (name === state.me && sel.value !== "admin") location.href = "/";
+    } catch (err) { await loadUsers(); setMsg("usersMsg", err.message, "error"); }
+  });
+  document.querySelectorAll("[data-remove]").forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.remove;
+    if (!confirm(`Remove the account "${name}"? They are signed out immediately. Their annotations stay.`)) return;
+    try {
+      await api("DELETE", `/api/admin/users/${encodeURIComponent(name)}`);
+      if (name === state.me) { location.href = "/login"; return; }
+      await loadUsers();
+      setMsg("usersMsg", `✓ Removed ${name}.`, "ok");
+    } catch (err) { setMsg("usersMsg", err.message, "error"); }
+  });
+  document.querySelectorAll("[data-reset]").forEach(btn => btn.onclick = () => { state.editing = btn.dataset.reset; renderUsers(); document.getElementById("resetPw").focus(); });
+  if (state.editing) {
+    document.getElementById("resetGen").onclick = () => { document.getElementById("resetPw").value = generatePassword(); };
+    document.getElementById("resetCancel").onclick = () => { state.editing = null; renderUsers(); };
+    document.getElementById("resetSave").onclick = async () => {
+      const name = state.editing;
+      try {
+        await api("POST", `/api/admin/users/${encodeURIComponent(name)}`, { password: document.getElementById("resetPw").value });
+        state.editing = null;
+        renderUsers();
+        setMsg("usersMsg", `✓ Password changed for ${name}.` + (name === state.me ? "" : " They are signed out and must use the new one."), "ok");
+      } catch (err) { setMsg("resetMsg", err.message, "error"); }
+    };
+  }
+}
+
+async function loadUsers() {
+  const j = await api("GET", "/api/admin/users");
+  state.users = j.users;
+  state.me = j.me;
+  if (state.tab === "users") renderUsers();
+}
+
+// --- Projects ------------------------------------------------------------------
+function renderProjects() {
+  const rows = state.projects.map(p => {
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+    const people = Object.entries(p.by_user).sort((a, b) => b[1] - a[1])
+      .map(([who, n]) => `<b>${esc(who || "unknown")}</b> ${n}`).join(" · ") || "—";
+    if (state.editing === p.name) {
+      return `<tr class="inline-form"><td colspan="5">
+        <div class="form-row">
+          <span class="muted" style="font-size:12px">Rename <b>${esc(p.name)}</b> to</span>
+          <input id="renameInput" value="${esc(p.name)}" spellcheck="false">
+          <button class="btn small primary" id="renameSave">Rename</button>
+          <button class="btn small" id="renameCancel">Cancel</button>
+        </div>
+        <div class="msg" id="renameMsg"></div>
+      </td></tr>`;
+    }
+    return `
+      <tr>
+        <td><b>${esc(p.name)}</b><div class="people">Done by: ${people}</div></td>
+        <td style="min-width:130px">
+          <div class="bar-track"><div class="bar-fill ${pct >= 100 ? "full" : ""}" style="width:${pct}%"></div></div>
+          <div class="people" style="margin-top:4px">${p.done} / ${p.total} done (${pct}%)</div>
+        </td>
+        <td class="muted">${p.files} files<br>${fmtBytes(p.bytes)}</td>
+        <td class="muted">${esc(fmtDate(p.last_edit))}</td>
+        <td class="actions">
+          <a class="btn small" href="/api/projects/${encodeURIComponent(p.name)}/download" download>Annotations .zip</a>
+          <a class="btn small" href="/api/projects/${encodeURIComponent(p.name)}/download?audio=1" download>Full .zip</a>
+          <button class="btn small" data-rename="${esc(p.name)}">Rename</button>
+          <button class="btn small danger" data-resetann="${esc(p.name)}">Reset annotations</button>
+          <button class="btn small danger" data-delete="${esc(p.name)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join("");
+
+  document.getElementById("tab").innerHTML = `
+    <div class="panel">
+      <h2>Projects <span class="muted">(${state.projects.length})</span><span class="spacer"></span>
+        <a class="btn" href="/" title="The Upload project button is on the dashboard">Upload a project →</a></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Project</th><th>Progress</th><th>On disk</th><th>Last edit</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="muted">No projects yet.</td></tr>`}</tbody>
+      </table></div>
+      <div class="msg" id="projectsMsg"></div>
+      <p class="hint" style="margin-top:10px">Deleted projects go to the Trash tab and can be restored.
+        Reset annotations keeps a backup copy in the project folder.</p>
+    </div>`;
+
+  document.querySelectorAll("[data-rename]").forEach(btn => btn.onclick = () => {
+    state.editing = btn.dataset.rename;
+    renderProjects();
+    const input = document.getElementById("renameInput");
+    input.focus(); input.select();
+  });
+  if (state.editing) {
+    const doRename = async () => {
+      const name = state.editing;
+      const newName = document.getElementById("renameInput").value.trim();
+      try {
+        await api("POST", `/api/admin/projects/${encodeURIComponent(name)}/rename`, { new_name: newName });
+        if (localStorage.getItem("labelin.lastProject") === name) localStorage.setItem("labelin.lastProject", newName);
+        state.editing = null;
+        await loadProjects();
+        setMsg("projectsMsg", `✓ Renamed ${name} to ${newName}.`, "ok");
+      } catch (err) { setMsg("renameMsg", err.message, "error"); }
+    };
+    document.getElementById("renameSave").onclick = doRename;
+    document.getElementById("renameInput").onkeydown = (e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") { state.editing = null; renderProjects(); } };
+    document.getElementById("renameCancel").onclick = () => { state.editing = null; renderProjects(); };
+  }
+  document.querySelectorAll("[data-resetann]").forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.resetann;
+    if (!confirm(`Reset all annotations of "${name}"?\n\nEvery clip goes back to pending. The current annotations are kept as a backup file in the project folder.`)) return;
+    try {
+      const j = await api("POST", `/api/admin/projects/${encodeURIComponent(name)}/reset`);
+      await loadProjects();
+      setMsg("projectsMsg", j.backup ? `✓ Annotations of ${name} reset. Backup: ${j.backup}` : `${name} had no annotations.`, "ok");
+    } catch (err) { setMsg("projectsMsg", err.message, "error"); }
+  });
+  document.querySelectorAll("[data-delete]").forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.delete;
+    if (!confirm(`Delete the project "${name}"?\n\nIt moves to the Trash tab, where you can restore it.`)) return;
+    try {
+      await api("DELETE", `/api/admin/projects/${encodeURIComponent(name)}`);
+      await loadProjects();
+      setMsg("projectsMsg", `✓ ${name} moved to the trash.`, "ok");
+    } catch (err) { setMsg("projectsMsg", err.message, "error"); }
+  });
+}
+
+async function loadProjects() {
+  state.projects = (await api("GET", "/api/admin/projects")).projects;
+  if (state.tab === "projects") renderProjects();
+}
+
+// --- Trash -----------------------------------------------------------------------
+function renderTrash() {
+  const rows = state.trash.map(t => `
+    <tr>
+      <td><b>${esc(t.name)}</b></td>
+      <td class="muted">${esc(fmtDate(t.deleted_at))}</td>
+      <td class="muted">${t.files} files · ${fmtBytes(t.bytes)}</td>
+      <td class="actions">
+        <button class="btn small" data-restore="${esc(t.id)}">Restore</button>
+        <button class="btn small danger" data-purge="${esc(t.id)}">Delete forever</button>
+      </td>
+    </tr>`).join("");
+  const total = state.trash.reduce((s, t) => s + t.bytes, 0);
+  document.getElementById("tab").innerHTML = `
+    <div class="panel">
+      <h2>Trash <span class="muted">(${state.trash.length}${state.trash.length ? ", " + fmtBytes(total) : ""})</span><span class="spacer"></span>
+        ${state.trash.length ? `<button class="btn danger" id="emptyTrash">Empty trash</button>` : ""}</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Project</th><th>Deleted</th><th>Size</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="muted">The trash is empty.</td></tr>`}</tbody>
+      </table></div>
+      <div class="msg" id="trashMsg"></div>
+    </div>`;
+
+  document.querySelectorAll("[data-restore]").forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.restore;
+    const item = state.trash.find(t => t.id === id);
+    let name = item.name;
+    try {
+      await api("POST", `/api/admin/trash/${encodeURIComponent(id)}/restore`, { name });
+    } catch (err) {
+      if (!/already exists/.test(err.message)) { setMsg("trashMsg", err.message, "error"); return; }
+      name = prompt(`A project called "${item.name}" already exists. Restore it under another name:`, item.name + " (restored)");
+      if (!name) return;
+      try { await api("POST", `/api/admin/trash/${encodeURIComponent(id)}/restore`, { name: name.trim() }); }
+      catch (err2) { setMsg("trashMsg", err2.message, "error"); return; }
+    }
+    await loadTrash();
+    setMsg("trashMsg", `✓ Restored ${name}.`, "ok");
+  });
+  document.querySelectorAll("[data-purge]").forEach(btn => btn.onclick = async () => {
+    const item = state.trash.find(t => t.id === btn.dataset.purge);
+    if (!confirm(`Permanently delete "${item.name}" (${item.files} files, ${fmtBytes(item.bytes)})?\n\nThis cannot be undone.`)) return;
+    try { await api("DELETE", `/api/admin/trash/${encodeURIComponent(item.id)}`); await loadTrash(); setMsg("trashMsg", `✓ ${item.name} deleted for good.`, "ok"); }
+    catch (err) { setMsg("trashMsg", err.message, "error"); }
+  });
+  const empty = document.getElementById("emptyTrash");
+  if (empty) empty.onclick = async () => {
+    if (!confirm(`Permanently delete all ${state.trash.length} project(s) in the trash?\n\nThis cannot be undone.`)) return;
+    try { const j = await api("DELETE", "/api/admin/trash"); await loadTrash(); setMsg("trashMsg", `✓ Deleted ${j.removed} project(s) for good.`, "ok"); }
+    catch (err) { setMsg("trashMsg", err.message, "error"); }
+  };
+}
+
+async function loadTrash() {
+  state.trash = (await api("GET", "/api/admin/trash")).trash;
+  if (state.tab === "trash") renderTrash();
+}
+
+// --- Tabs --------------------------------------------------------------------------
+const loaders = { users: loadUsers, projects: loadProjects, trash: loadTrash };
+function showTab(tab) {
+  state.tab = tab;
+  state.editing = null;
+  try { localStorage.setItem("labelin.adminTab", tab); } catch (e) {}
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("tab").innerHTML = `<p class="muted">Loading…</p>`;
+  loaders[tab]().catch(err => { document.getElementById("tab").innerHTML = `<p class="msg error">${esc(err.message)}</p>`; });
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+fetch("/api/me").then(r => r.json()).then(me => {
+  if (me.user) {
+    document.getElementById("who").textContent = `Signed in as ${me.user}`;
+    document.getElementById("logoutForm").hidden = false;
+  }
+}).catch(() => {});
+
+let startTab = "users";
+try { startTab = localStorage.getItem("labelin.adminTab") || "users"; } catch (e) {}
+showTab(loaders[startTab] ? startTab : "users");
+</script>
+</body>
+</html>

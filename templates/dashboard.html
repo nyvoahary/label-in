@@ -39,6 +39,7 @@
   .toolbar h1 { font-size: 15px; font-weight: 600; margin: 0; }
   .toolbar .sub { font-size: 11px; color: var(--muted); margin-left: 4px; }
   .toolbar .spacer { flex: 1; }
+  .toolbar .who { font-size: 12px; color: var(--muted); }
   .toolbar a, .toolbar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; text-decoration: none; }
   .toolbar a:hover, .toolbar button:hover { border-color: var(--accent); }
@@ -168,10 +169,13 @@
   <h1>Dashboard</h1>
   <span class="sub">{{ root }}</span>
   <div class="spacer"></div>
-  <button id="uploadBtn" title="Upload a project folder (audio + *.label_studio.json)">Upload project</button>
+  <button id="uploadBtn" title="Upload a project folder (audio + *.label_studio.json)" hidden>Upload project</button>
   <input type="file" id="uploadInput" webkitdirectory multiple hidden>
+  <a href="/admin" id="adminLink" hidden>Admin</a>
   <a href="/projects" id="projectsLink">Go to labeling →</a>
   <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
+  <span class="who" id="who"></span>
+  <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button>Log out</button></form>
 </div>
 
 <div id="uploadPanel" hidden></div>
@@ -657,6 +661,24 @@ function toggleTheme() {
 document.getElementById("themeBtn").onclick = toggleTheme;
 const savedTheme = localStorage.getItem("labelin.theme");
 setTheme(savedTheme === "light" ? "light" : "dark");
+
+// Back to the login page when the session has ended (signed out, password changed, account removed).
+const _fetch = window.fetch;
+window.fetch = async (...args) => {
+  const r = await _fetch(...args);
+  if (r.status === 401) location.href = "/login?next=" + encodeURIComponent(location.pathname);
+  return r;
+};
+
+fetch("/api/me").then(r => r.json()).then(me => {
+  const admin = me.role === "admin";
+  document.getElementById("uploadBtn").hidden = !admin;
+  document.getElementById("adminLink").hidden = !admin;
+  if (me.user) {
+    document.getElementById("who").textContent = me.user;
+    document.getElementById("logoutForm").hidden = false;
+  }
+}).catch(() => {});
 
 load();
 </script>

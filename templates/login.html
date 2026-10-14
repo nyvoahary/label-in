@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign in · Label-in</title>
+<script>
+  try { if (localStorage.getItem("labelin.theme") === "light") document.documentElement.classList.add("light-theme"); } catch (e) {}
+</script>
+<style>
+  :root { --bg: #0f1115; --panel: #171a21; --panel-2: #1f242d; --border: #2a3140;
+    --text: #e6e8ee; --muted: #8a93a6; --accent: #f59e0b; --review: #ef4444; }
+  .light-theme { --bg: #f7f8fb; --panel: #ffffff; --panel-2: #f3f6fb; --border: #d9e2ec;
+    --text: #111827; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+  form { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px 24px; }
+  .logo { display: block; height: 40px; margin: 0 auto 18px; filter: invert(1); }
+  .light-theme .logo { filter: none; }
+  h1 { font-size: 16px; font-weight: 600; text-align: center; margin: 0 0 20px; }
+  label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; margin: 0 0 6px; }
+  input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 9px 11px; font-size: 14px; margin-bottom: 14px; }
+  input:focus { outline: none; border-color: var(--accent); }
+  button { width: 100%; background: var(--accent); border: 1px solid var(--accent); color: #fff;
+    border-radius: 6px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .error { color: var(--review); font-size: 13px; margin: 0 0 14px; text-align: center; }
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+  <img src="/static/logo.png" alt="" class="logo">
+  <h1>Sign in to Label-in</h1>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="username">Username</label>
+  <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false"
+         value="{{ username }}" required {% if not username %}autofocus{% endif %}>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required
+         {% if username %}autofocus{% endif %}>
+  <button type="submit">Sign in</button>
+</form>
+</body>
+</html>

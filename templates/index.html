@@ -194,8 +194,11 @@
   <main class="main">
     <div class="toolbar">
       <a class="toolbar-dashboard" href="/">Dashboard</a>
+      <a class="toolbar-dashboard" href="/admin" id="adminLink" hidden>Admin</a>
       <span class="meta" id="metaIdx">—</span>
       <div class="spacer"></div>
+      <span class="meta" id="who"></span>
+      <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button>Log out</button></form>
       <label class="toggle-switch" title="Toggle theme">
         <input type="checkbox" id="themeBtn">
         <span class="toggle-track theme-track"><span class="toggle-thumb theme-thumb" id="themeIcon">🌙</span></span>
@@ -222,6 +225,21 @@
 <script type="module">
 import WaveSurfer from "{{ url_for('static', filename='wavesurfer/wavesurfer.esm.js') }}";
 import RegionsPlugin from "{{ url_for('static', filename='wavesurfer/plugins/regions.esm.js') }}";
+
+// Back to the login page when the session has ended (signed out, password changed, account removed).
+const _fetch = window.fetch;
+window.fetch = async (...args) => {
+  const r = await _fetch(...args);
+  if (r.status === 401) location.href = "/login?next=" + encodeURIComponent(location.pathname);
+  return r;
+};
+fetch("/api/me").then(r => r.json()).then(me => {
+  if (me.role === "admin") document.getElementById("adminLink").hidden = false;
+  if (me.user) {
+    document.getElementById("who").textContent = me.user;
+    document.getElementById("logoutForm").hidden = false;
+  }
+}).catch(() => {});
 
 // Central application state shared across all functions.
 const state = {
@@ -613,7 +631,7 @@ function select(idx) {
   const t = state.tasks[idx];
   if (!t) return;
   document.getElementById("metaIdx").textContent =
-    `${state.project} · Task ${idx + 1} / ${state.tasks.length}`;
+    `${state.project} · Task ${idx + 1} / ${state.tasks.length}` + (t.updated_by ? ` · last edited by ${t.updated_by}` : "");
   const dur = t.duration ? t.duration.toFixed(2) + "s" : "—";
   const conf = t.confidence != null ? t.confidence.toFixed(3) : "—";
   const audioUrl = `/audio/${encodeURIComponent(state.project)}/${encodeURIComponent(t.audio)}`;
@@ -972,6 +990,7 @@ async function autoSave() {
     if (j.ok) {
       state.tasks[idx].annotation = text;
       state.tasks[idx].status = status;
+      state.tasks[idx].updated_by = j.annotation.updated_by;
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
       document.getElementById("saveStatus").classList.add("autosaved");
       renderSidebar();
@@ -1003,6 +1022,7 @@ async function save(advance, statusOverride) {
   if (j.ok) {
     state.tasks[idx].annotation = text;
     state.tasks[idx].status = status;
+    state.tasks[idx].updated_by = j.annotation.updated_by;
     if (status === "done") learnWords(text);
     document.getElementById("saveStatus").textContent = "✓ saved";
     document.getElementById("saveStatus").classList.add("saved");

@@ -12,19 +12,26 @@ Defaults to the directory containing this file. Open http://127.0.0.1:5000
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory, abort, render_template
-from werkzeug.security import check_password_hash
+from flask import (Flask, Response, abort, g, jsonify, redirect, render_template, request, send_file,
+                   send_from_directory, session, url_for)
+from werkzeug.security import check_password_hash, generate_password_hash
+
+import accounts
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -43,38 +50,161 @@ app = Flask(__name__, template_folder=str(ROOT / "templates"))
 
 
 # --- Login -----------------------------------------------------------------------
-# HTTP Basic auth against AUTH_FILE ({"username": "<werkzeug password hash>"}),
-# managed with manage_users.py. With no users the app stays open (local use).
+# Session login against AUTH_FILE (see accounts.py), managed on the admin page or
+# with manage_users.py. With no accounts the app stays open and everyone is admin
+# (local use).
 
 AUTH_FILE = Path(os.environ.get("AUTH_FILE", DATA_ROOT / "users.json"))
-_auth_cache: dict = {"mtime": None, "users": {}, "verified": set()}
+_auth_cache: dict = {"mtime": None, "users": {}}
+_users_lock = threading.Lock()
 
 
-def _auth_users() -> dict[str, str]:
+def _load_secret_key() -> str:
+    if os.environ.get("SECRET_KEY"):
+        return os.environ["SECRET_KEY"]
+    # Kept next to the data so sessions survive restarts and redeploys.
+    path = DATA_ROOT / ".secret_key"
+    if not path.exists():
+        path.write_text(secrets.token_hex(32))
+        path.chmod(0o600)
+    return path.read_text().strip()
+
+
+app.config.update(
+    SECRET_KEY=_load_secret_key(),
+    SESSION_COOKIE_NAME="labelin_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+
+def _auth_users() -> dict[str, dict]:
     try:
         mtime = AUTH_FILE.stat().st_mtime
     except FileNotFoundError:
         return {}
     if mtime != _auth_cache["mtime"]:
-        _auth_cache.update(mtime=mtime, users=json.loads(AUTH_FILE.read_text("utf-8")), verified=set())
+        _auth_cache.update(mtime=mtime, users=accounts.load(AUTH_FILE))
     return _auth_cache["users"]
+
+
+def _update_users(change) -> None:
+    """Read-modify-write users.json under a lock; `change` edits the dict in place."""
+    with _users_lock:
+        users = accounts.load(AUTH_FILE)
+        change(users)
+        accounts.save(AUTH_FILE, users)
+
+
+def current_user() -> str | None:
+    return g.get("user")
+
+
+def is_admin() -> bool:
+    return g.get("role") == "admin"
+
+
+# Failed logins per client: at most LOGIN_MAX_FAILS per LOGIN_WINDOW seconds.
+LOGIN_MAX_FAILS, LOGIN_WINDOW = 10, 600
+_login_fails: dict[str, list[float]] = {}
+
+
+def _client_ip() -> str:
+    # Cloudflare sets CF-Connecting-IP; the local address has no proxy in front.
+    return (request.headers.get("CF-Connecting-IP")
+            or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or request.remote_addr or "?")
+
+
+def _recent_fails(ip: str) -> list[float]:
+    cutoff = time.time() - LOGIN_WINDOW
+    fails = [t for t in _login_fails.get(ip, []) if t > cutoff]
+    _login_fails[ip] = fails
+    return fails
+
+
+PUBLIC_ENDPOINTS = {"login", "logout"}
 
 
 @app.before_request
 def require_login():
     users = _auth_users()
     if not users:
+        g.user, g.role = None, "admin"
         return None
-    auth = request.authorization
-    if auth and auth.type == "basic" and auth.username in users:
-        # Password hashing is deliberately slow; remember credentials already checked.
-        key = (auth.username, hashlib.sha256((auth.password or "").encode()).hexdigest())
-        if key in _auth_cache["verified"]:
-            return None
-        if check_password_hash(users[auth.username], auth.password or ""):
-            _auth_cache["verified"].add(key)
-            return None
-    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="label-in"'})
+    # Reject cross-site writes (the session cookie is SameSite=Lax, this is a second line).
+    origin = request.headers.get("Origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and urlsplit(origin).netloc != request.host:
+        return jsonify({"error": "Cross-site request refused"}), 403
+    name = session.get("user")
+    acc = users.get(name) if name else None
+    if acc and session.get("v") == accounts.fingerprint(acc):
+        g.user, g.role = name, acc.get("role", "annotator")
+        return None
+    session.pop("user", None)
+    if request.endpoint in PUBLIC_ENDPOINTS or (request.endpoint == "static" and request.path == "/static/logo.png"):
+        return None
+    if request.path.startswith(("/api/", "/audio/", "/static/")):
+        return jsonify({"error": "Login required", "login": True}), 401
+    return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Admins only"}), 403
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def _safe_next(target: str | None) -> str:
+    # Only same-site paths, never "//host" or "https://host".
+    if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return "/"
+    return target
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    users = _auth_users()
+    nxt = _safe_next(request.values.get("next"))
+    if not users:
+        return redirect(nxt)
+    error = None
+    if request.method == "POST":
+        ip = _client_ip()
+        name = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        acc = users.get(name)
+        if len(_recent_fails(ip)) >= LOGIN_MAX_FAILS:
+            error = "Too many failed attempts. Try again in a few minutes."
+        elif acc and check_password_hash(acc["hash"], password):
+            _login_fails.pop(ip, None)
+            session.clear()
+            session.permanent = True
+            session.update(user=name, v=accounts.fingerprint(acc))
+            _update_users(lambda u: u[name].update(last_login=accounts.now()) if name in u else None)
+            return redirect(nxt)
+        else:
+            _login_fails.setdefault(ip, []).append(time.time())
+            error = "Wrong username or password."
+        return render_template("login.html", error=error, next=nxt, username=name), 401
+    return render_template("login.html", error=None, next=nxt, username="")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/api/me")
+def api_me():
+    return jsonify({"user": current_user(), "role": g.get("role"), "login_enabled": bool(_auth_users())})
 
 
 def discover_projects() -> list[dict]:
@@ -121,6 +251,10 @@ def load_annotations(project: dict) -> dict[str, dict]:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     return {}
+
+
+# Serialises read-modify-write of annotations.json between concurrent requests.
+annotations_lock = threading.RLock()
 
 
 def save_annotations(project: dict, data: dict[str, dict]) -> None:
@@ -208,6 +342,7 @@ def api_tasks(name: str):
             "annotation": (anno or {}).get("text", ""),
             "status": (anno or {}).get("status", "pending"),
             "updated_at": (anno or {}).get("updated_at"),
+            "updated_by": (anno or {}).get("updated_by"),
         })
     return jsonify({"project": name, "tasks": out, "count": len(out)})
 
@@ -275,8 +410,12 @@ def api_save(name: str, idx: int):
         status = "done" if text else "pending"
 
     audio = task_audio(tasks[idx])
-    annos = load_annotations(project)
+    with annotations_lock:
+        return _save_one(project, idx, audio, text, status)
 
+
+def _save_one(project: dict, idx: int, audio: str, text: str, status: str):
+    annos = load_annotations(project)
     existing = annos.get(audio, {})
     if status == "autosave" and existing.get("status") in ("done", "review"):
         status = existing["status"]
@@ -288,6 +427,8 @@ def api_save(name: str, idx: int):
         "status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if current_user():
+        annos[audio]["updated_by"] = current_user()
     save_annotations(project, annos)
     return jsonify({"ok": True, "annotation": annos[audio]})
 
@@ -537,6 +678,7 @@ def _missing_audio(tasks_file: Path, *folders: Path) -> list[str]:
 
 
 @app.route("/api/uploads/<name>")
+@admin_required
 def api_upload_status(name: str):
     """Files already staged for this upload, so an interrupted upload can resume."""
     staging = _staging_dir(name)
@@ -545,6 +687,7 @@ def api_upload_status(name: str):
 
 
 @app.route("/api/uploads/<name>/files/<filename>", methods=["PUT"])
+@admin_required
 def api_upload_file(name: str, filename: str):
     staging = _staging_dir(name)
     _check_upload_filename(filename)
@@ -558,12 +701,14 @@ def api_upload_file(name: str, filename: str):
 
 
 @app.route("/api/uploads/<name>", methods=["DELETE"])
+@admin_required
 def api_upload_cancel(name: str):
     shutil.rmtree(_staging_dir(name), ignore_errors=True)
     return jsonify({"ok": True})
 
 
 @app.route("/api/uploads/<name>/finish", methods=["POST"])
+@admin_required
 def api_upload_finish(name: str):
     staging = _staging_dir(name)
     if not staging.is_dir():
@@ -612,12 +757,13 @@ def api_upload_finish(name: str):
     uploaded_ann = staging / "annotations.json"
     if uploaded_ann.exists():
         project = get_project(name)
-        local = load_annotations(project)
-        merged, pulled, kept = _merge_annotations(local, json.loads(uploaded_ann.read_text("utf-8")))
-        if pulled:
-            if project["annotations_file"].exists():
-                shutil.copyfile(project["annotations_file"], str(project["annotations_file"]) + ".bak")
-            save_annotations(project, merged)
+        with annotations_lock:
+            local = load_annotations(project)
+            merged, pulled, kept = _merge_annotations(local, json.loads(uploaded_ann.read_text("utf-8")))
+            if pulled:
+                if project["annotations_file"].exists():
+                    shutil.copyfile(project["annotations_file"], str(project["annotations_file"]) + ".bak")
+                save_annotations(project, merged)
 
     shutil.rmtree(staging, ignore_errors=True)
     if pulled:
@@ -648,6 +794,242 @@ def api_download(name: str):
     suffix = "" if full else "_annotations"
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name=f"{name}{suffix}.zip")
+
+
+# --- Admin: accounts, projects, trash ------------------------------------------
+
+TRASH_DIR = DATA_ROOT / ".trash"
+TRASH_ID_RE = re.compile(r"^(.+)__(\d{8}T\d{6}Z)$")
+
+
+@app.route("/admin")
+@admin_required
+def admin_page():
+    return render_template("admin.html", root=DATA_ROOT.name)
+
+
+@app.route("/api/admin/users")
+@admin_required
+def api_admin_users():
+    users = _auth_users()
+    return jsonify({"users": [
+        {"name": n, "role": a.get("role"), "created_at": a.get("created_at"), "last_login": a.get("last_login")}
+        for n, a in sorted(users.items())
+    ], "me": current_user()})
+
+
+def _user_change_error(users: dict, name: str, role: str | None, removing: bool) -> str | None:
+    """Refuse changes that would leave accounts without any admin."""
+    acc = users.get(name)
+    if acc is None:
+        return f"No such account: {name}"
+    loses_admin = acc.get("role") == "admin" and (removing or (role is not None and role != "admin"))
+    if loses_admin and accounts.admins(users) == [name]:
+        return f"{name} is the last admin. Make another account admin first."
+    return None
+
+
+@app.route("/api/admin/users", methods=["POST"])
+@admin_required
+def api_admin_user_create():
+    body = request.get_json(force=True) or {}
+    name = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    role = body.get("role") or "annotator"
+    if not accounts.USERNAME_RE.match(name):
+        return jsonify({"error": "Username may only contain letters, digits, _ and - (max 64)"}), 400
+    if role not in accounts.ROLES:
+        return jsonify({"error": f"Unknown role: {role}"}), 400
+    problem = accounts.password_problem(password)
+    if problem:
+        return jsonify({"error": problem}), 400
+    with _users_lock:
+        users = accounts.load(AUTH_FILE)
+        if name in users:
+            return jsonify({"error": f"Account '{name}' already exists"}), 409
+        if not users and role != "admin":
+            return jsonify({"error": "The first account must be an admin"}), 400
+        users[name] = {"hash": generate_password_hash(password), "role": role, "created_at": accounts.now()}
+        accounts.save(AUTH_FILE, users)
+    if current_user() is None:
+        # First account created while login was off: sign its creator in as that account.
+        session.update(user=name, v=accounts.fingerprint(users[name]))
+        session.permanent = True
+    return jsonify({"ok": True, "name": name, "role": role})
+
+
+@app.route("/api/admin/users/<name>", methods=["POST"])
+@admin_required
+def api_admin_user_update(name: str):
+    body = request.get_json(force=True) or {}
+    password = body.get("password")
+    role = body.get("role")
+    if role is not None and role not in accounts.ROLES:
+        return jsonify({"error": f"Unknown role: {role}"}), 400
+    if password is not None:
+        problem = accounts.password_problem(password)
+        if problem:
+            return jsonify({"error": problem}), 400
+    with _users_lock:
+        users = accounts.load(AUTH_FILE)
+        error = _user_change_error(users, name, role, removing=False)
+        if error:
+            return jsonify({"error": error}), 404 if name not in users else 400
+        if role is not None:
+            users[name]["role"] = role
+        if password is not None:
+            users[name]["hash"] = generate_password_hash(password)
+        accounts.save(AUTH_FILE, users)
+    if name == current_user() and password is not None:
+        session["v"] = accounts.fingerprint(users[name])  # stay signed in after changing your own password
+    return jsonify({"ok": True, "name": name, "role": users[name]["role"]})
+
+
+@app.route("/api/admin/users/<name>", methods=["DELETE"])
+@admin_required
+def api_admin_user_delete(name: str):
+    with _users_lock:
+        users = accounts.load(AUTH_FILE)
+        error = _user_change_error(users, name, None, removing=True)
+        if error:
+            return jsonify({"error": error}), 404 if name not in users else 400
+        del users[name]
+        accounts.save(AUTH_FILE, users)
+    return jsonify({"ok": True})
+
+
+def _folder_size(folder: Path) -> tuple[int, int]:
+    files = [p for p in folder.iterdir() if p.is_file()]
+    return len(files), sum(p.stat().st_size for p in files)
+
+
+@app.route("/api/admin/projects")
+@admin_required
+def api_admin_projects():
+    out = []
+    for p in discover_projects():
+        annos = load_annotations(p)
+        by_user: dict[str, int] = {}
+        for a in annos.values():
+            if isinstance(a, dict) and a.get("status") == "done":
+                who = a.get("updated_by") or ""
+                by_user[who] = by_user.get(who, 0) + 1
+        n_files, size = _folder_size(p["dir"])
+        out.append({
+            "name": p["name"],
+            "total": len(load_tasks(p)),
+            "done": sum(by_user.values()),
+            "annotated": len(annos),
+            "by_user": by_user,
+            "files": n_files,
+            "bytes": size,
+            "last_edit": max((a.get("updated_at", "") for a in annos.values() if isinstance(a, dict)), default=None),
+        })
+    return jsonify({"projects": out})
+
+
+def _valid_new_project_name(new: str):
+    if not PROJECT_NAME_RE.match(new):
+        return jsonify({"error": "Name may use letters, digits, spaces, _ . - and must not start with a dot"}), 400
+    if (DATA_ROOT / new).exists():
+        return jsonify({"error": f"'{new}' already exists"}), 409
+    return None
+
+
+@app.route("/api/admin/projects/<name>/rename", methods=["POST"])
+@admin_required
+def api_admin_project_rename(name: str):
+    project = get_project(name)
+    new = ((request.get_json(force=True) or {}).get("new_name") or "").strip()
+    if new == name:
+        return jsonify({"ok": True, "name": name})
+    problem = _valid_new_project_name(new)
+    if problem:
+        return problem
+    with annotations_lock:
+        project["dir"].rename(DATA_ROOT / new)
+    return jsonify({"ok": True, "name": new})
+
+
+@app.route("/api/admin/projects/<name>", methods=["DELETE"])
+@admin_required
+def api_admin_project_delete(name: str):
+    project = get_project(name)
+    TRASH_DIR.mkdir(exist_ok=True)
+    when = datetime.now(timezone.utc)
+    while (TRASH_DIR / (trash_id := f"{name}__{when.strftime('%Y%m%dT%H%M%SZ')}")).exists():
+        when += timedelta(seconds=1)
+    with annotations_lock:
+        project["dir"].rename(TRASH_DIR / trash_id)
+    return jsonify({"ok": True, "trash_id": trash_id})
+
+
+@app.route("/api/admin/projects/<name>/reset", methods=["POST"])
+@admin_required
+def api_admin_project_reset(name: str):
+    project = get_project(name)
+    ann = project["annotations_file"]
+    with annotations_lock:
+        if not ann.exists():
+            return jsonify({"ok": True, "backup": None})
+        backup = ann.with_name(f"annotations.json.reset-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.bak")
+        ann.rename(backup)
+    return jsonify({"ok": True, "backup": backup.name})
+
+
+def _trash_entry(trash_id: str) -> Path:
+    m = TRASH_ID_RE.match(trash_id)
+    path = TRASH_DIR / trash_id
+    if not m or not PROJECT_NAME_RE.match(m.group(1)) or "/" in trash_id or not path.is_dir():
+        abort(404, "Not in trash")
+    return path
+
+
+@app.route("/api/admin/trash")
+@admin_required
+def api_admin_trash():
+    out = []
+    if TRASH_DIR.is_dir():
+        for p in sorted(TRASH_DIR.iterdir(), reverse=True):
+            m = TRASH_ID_RE.match(p.name)
+            if not m or not p.is_dir():
+                continue
+            n_files, size = _folder_size(p)
+            deleted = datetime.strptime(m.group(2), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+            out.append({"id": p.name, "name": m.group(1), "deleted_at": deleted.isoformat(),
+                        "files": n_files, "bytes": size})
+    return jsonify({"trash": out})
+
+
+@app.route("/api/admin/trash/<trash_id>/restore", methods=["POST"])
+@admin_required
+def api_admin_trash_restore(trash_id: str):
+    path = _trash_entry(trash_id)
+    new = ((request.get_json(silent=True) or {}).get("name") or TRASH_ID_RE.match(trash_id).group(1)).strip()
+    problem = _valid_new_project_name(new)
+    if problem:
+        return problem
+    path.rename(DATA_ROOT / new)
+    return jsonify({"ok": True, "name": new})
+
+
+@app.route("/api/admin/trash/<trash_id>", methods=["DELETE"])
+@admin_required
+def api_admin_trash_delete(trash_id: str):
+    shutil.rmtree(_trash_entry(trash_id))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/trash", methods=["DELETE"])
+@admin_required
+def api_admin_trash_empty():
+    removed = 0
+    if TRASH_DIR.is_dir():
+        for p in TRASH_DIR.iterdir():
+            if p.is_dir() and TRASH_ID_RE.match(p.name):
+                shutil.rmtree(p)
+                removed += 1
+    return jsonify({"ok": True, "removed": removed})
 
 
 # Override with LEARNED_WORDS_FILE to keep the list on persistent storage (e.g. in Docker).
