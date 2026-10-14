@@ -12,6 +12,7 @@ Defaults to the directory containing this file. Open http://127.0.0.1:5000
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -23,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory, abort, render_template
+from werkzeug.security import check_password_hash
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -38,6 +40,41 @@ if not DATA_ROOT.exists():
     raise SystemExit(f"Root folder not found: {DATA_ROOT}")
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
+
+
+# --- Login -----------------------------------------------------------------------
+# HTTP Basic auth against AUTH_FILE ({"username": "<werkzeug password hash>"}),
+# managed with manage_users.py. With no users the app stays open (local use).
+
+AUTH_FILE = Path(os.environ.get("AUTH_FILE", DATA_ROOT / "users.json"))
+_auth_cache: dict = {"mtime": None, "users": {}, "verified": set()}
+
+
+def _auth_users() -> dict[str, str]:
+    try:
+        mtime = AUTH_FILE.stat().st_mtime
+    except FileNotFoundError:
+        return {}
+    if mtime != _auth_cache["mtime"]:
+        _auth_cache.update(mtime=mtime, users=json.loads(AUTH_FILE.read_text("utf-8")), verified=set())
+    return _auth_cache["users"]
+
+
+@app.before_request
+def require_login():
+    users = _auth_users()
+    if not users:
+        return None
+    auth = request.authorization
+    if auth and auth.type == "basic" and auth.username in users:
+        # Password hashing is deliberately slow; remember credentials already checked.
+        key = (auth.username, hashlib.sha256((auth.password or "").encode()).hexdigest())
+        if key in _auth_cache["verified"]:
+            return None
+        if check_password_hash(users[auth.username], auth.password or ""):
+            _auth_cache["verified"].add(key)
+            return None
+    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="label-in"'})
 
 
 def discover_projects() -> list[dict]:
