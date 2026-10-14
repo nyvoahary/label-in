@@ -82,7 +82,7 @@
   <img src="/static/logo.png" alt="Logo" class="logo">
   <h1>Admin</h1>
   <div class="spacer"></div>
-  <span class="who" id="who"></span>
+  <a href="/account" id="who" title="My account · change password" hidden></a>
   <a href="/">Dashboard</a>
   <a href="/projects">Labeling</a>
   <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button class="btn">Log out</button></form>
@@ -180,7 +180,7 @@ function renderUsers() {
     </div>
     <div class="panel">
       <h2>Add an account</h2>
-      <p class="hint">Give the password to the person privately. They can't change it themselves yet, so reset it here if needed.</p>
+      <p class="hint">Give the password to the person privately. They can change it later from My account (click their name in the toolbar).</p>
       <form class="form-row" id="addForm" autocomplete="off">
         <input id="newName" placeholder="username" pattern="[A-Za-z0-9_\\-]{1,64}" required spellcheck="false" autocapitalize="none">
         <select id="newRole"><option value="annotator">Annotator</option><option value="admin">Admin</option></select>
@@ -414,7 +414,8 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab
 
 fetch("/api/me").then(r => r.json()).then(me => {
   if (me.user) {
-    document.getElementById("who").textContent = `Signed in as ${me.user}`;
+    document.getElementById("who").textContent = "👤 " + me.user;
+    document.getElementById("who").hidden = false;
     document.getElementById("logoutForm").hidden = false;
   }
 }).catch(() => {});

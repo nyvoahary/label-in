@@ -197,7 +197,7 @@
       <a class="toolbar-dashboard" href="/admin" id="adminLink" hidden>Admin</a>
       <span class="meta" id="metaIdx">—</span>
       <div class="spacer"></div>
-      <span class="meta" id="who"></span>
+      <a class="toolbar-dashboard" href="/account" id="who" title="My account · change password" hidden></a>
       <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button>Log out</button></form>
       <label class="toggle-switch" title="Toggle theme">
         <input type="checkbox" id="themeBtn">
@@ -236,7 +236,8 @@ window.fetch = async (...args) => {
 fetch("/api/me").then(r => r.json()).then(me => {
   if (me.role === "admin") document.getElementById("adminLink").hidden = false;
   if (me.user) {
-    document.getElementById("who").textContent = me.user;
+    document.getElementById("who").textContent = "👤 " + me.user;
+    document.getElementById("who").hidden = false;
     document.getElementById("logoutForm").hidden = false;
   }
 }).catch(() => {});

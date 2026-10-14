@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>My account · Label-in</title>
+<script>
+  try { if (localStorage.getItem("labelin.theme") === "light") document.documentElement.classList.add("light-theme"); } catch (e) {}
+</script>
+<style>
+  :root { --bg: #0f1115; --panel: #171a21; --panel-2: #1f242d; --border: #2a3140;
+    --text: #e6e8ee; --muted: #8a93a6; --accent: #f59e0b; --done: #22c55e; --review: #ef4444; }
+  .light-theme { --bg: #f7f8fb; --panel: #ffffff; --panel-2: #f3f6fb; --border: #d9e2ec;
+    --text: #111827; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .toolbar { padding: 10px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;
+    align-items: center; background: var(--panel); flex-wrap: wrap; }
+  .toolbar .logo { filter: invert(1); height: 32px; margin-right: 6px; }
+  .light-theme .toolbar .logo { filter: none; }
+  .toolbar h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar a, .toolbar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; text-decoration: none; font-family: inherit; }
+  .toolbar a:hover, .toolbar button:hover { border-color: var(--accent); }
+  .container { max-width: 420px; margin: 0 auto; padding: 32px 16px 60px; }
+  form { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: var(--muted); margin: 0 0 20px; }
+  label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; margin: 0 0 6px; }
+  input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 9px 11px; font-size: 14px; margin-bottom: 14px; }
+  input:focus { outline: none; border-color: var(--accent); }
+  button.primary { width: 100%; background: var(--accent); border: 1px solid var(--accent); color: #fff;
+    border-radius: 6px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  button.primary:disabled { opacity: .6; cursor: wait; }
+  .hint { font-size: 12px; color: var(--muted); margin: -8px 0 14px; }
+  .msg { font-size: 13px; margin: 14px 0 0; min-height: 18px; text-align: center; }
+  .msg.error { color: var(--review); }
+  .msg.ok { color: var(--done); }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <img src="/static/logo.png" alt="Logo" class="logo">
+  <h1>My account</h1>
+  <div class="spacer"></div>
+  <a href="/">Dashboard</a>
+  <a href="/projects">Labeling</a>
+  <form method="post" action="/logout" style="margin:0;padding:0;border:0;background:none"><button>Log out</button></form>
+</div>
+
+<div class="container">
+  <form id="pwForm">
+    <h2>Change password</h2>
+    <p class="sub">Signed in as <b>{{ user }}</b>. Other devices using this account will be signed out.</p>
+    <input type="text" name="username" value="{{ user }}" autocomplete="username" hidden>
+    <label for="current">Current password</label>
+    <input id="current" type="password" autocomplete="current-password" required autofocus>
+    <label for="new">New password</label>
+    <input id="new" type="password" autocomplete="new-password" minlength="8" required>
+    <p class="hint">At least 8 characters.</p>
+    <label for="repeat">Repeat new password</label>
+    <input id="repeat" type="password" autocomplete="new-password" minlength="8" required>
+    <button class="primary" id="saveBtn">Change password</button>
+    <p class="msg" id="msg" role="status"></p>
+  </form>
+</div>
+
+<script>
+const form = document.getElementById("pwForm");
+const msg = (text, cls) => { const el = document.getElementById("msg"); el.textContent = text; el.className = "msg " + cls; };
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  const current = document.getElementById("current").value;
+  const next = document.getElementById("new").value;
+  if (next !== document.getElementById("repeat").value) return msg("The new passwords don't match.", "error");
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/account/password", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current, new: next }),
+    });
+    if (r.status === 401) { location.href = "/login?next=/account"; return; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return msg(j.error || `Failed (HTTP ${r.status})`, "error");
+    form.reset();
+    msg("✓ Password changed.", "ok");
+  } catch (err) {
+    msg("Could not reach the server. Try again.", "error");
+  } finally {
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

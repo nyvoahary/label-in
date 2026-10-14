@@ -202,6 +202,42 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/account")
+def account_page():
+    if not current_user():
+        return redirect("/")
+    return render_template("account.html", user=current_user())
+
+
+@app.route("/api/account/password", methods=["POST"])
+def api_change_password():
+    name = current_user()
+    if not name:
+        return jsonify({"error": "Login is not enabled"}), 400
+    body = request.get_json(force=True) or {}
+    current, new = body.get("current") or "", body.get("new") or ""
+    ip = _client_ip()
+    if len(_recent_fails(ip)) >= LOGIN_MAX_FAILS:
+        return jsonify({"error": "Too many failed attempts. Try again in a few minutes."}), 429
+    if not check_password_hash(_auth_users()[name]["hash"], current):
+        _login_fails.setdefault(ip, []).append(time.time())
+        return jsonify({"error": "Your current password is not correct."}), 400
+    problem = accounts.password_problem(new)
+    if problem:
+        return jsonify({"error": problem}), 400
+    if new == current:
+        return jsonify({"error": "The new password is the same as the current one."}), 400
+    with _users_lock:
+        users = accounts.load(AUTH_FILE)
+        if name not in users:
+            return jsonify({"error": "Account not found"}), 404
+        users[name]["hash"] = generate_password_hash(new)
+        accounts.save(AUTH_FILE, users)
+    # Keeps this browser signed in; sessions elsewhere end.
+    session["v"] = accounts.fingerprint(users[name])
+    return jsonify({"ok": True})
+
+
 @app.route("/api/me")
 def api_me():
     return jsonify({"user": current_user(), "role": g.get("role"), "login_enabled": bool(_auth_users())})

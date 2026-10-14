@@ -174,7 +174,7 @@
   <a href="/admin" id="adminLink" hidden>Admin</a>
   <a href="/projects" id="projectsLink">Go to labeling →</a>
   <button id="themeBtn" class="theme-btn" title="Toggle theme">🌙</button>
-  <span class="who" id="who"></span>
+  <a href="/account" id="who" title="My account · change password" hidden></a>
   <form method="post" action="/logout" id="logoutForm" style="margin:0" hidden><button>Log out</button></form>
 </div>
 
@@ -675,7 +675,8 @@ fetch("/api/me").then(r => r.json()).then(me => {
   document.getElementById("uploadBtn").hidden = !admin;
   document.getElementById("adminLink").hidden = !admin;
   if (me.user) {
-    document.getElementById("who").textContent = me.user;
+    document.getElementById("who").textContent = "👤 " + me.user;
+    document.getElementById("who").hidden = false;
     document.getElementById("logoutForm").hidden = false;
   }
 }).catch(() => {});
