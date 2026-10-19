@@ -12,6 +12,7 @@ Defaults to the directory containing this file. Open http://127.0.0.1:5000
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -148,6 +149,20 @@ def require_login():
     if request.path.startswith(("/api/", "/audio/", "/static/")):
         return jsonify({"error": "Login required", "login": True}), 401
     return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+
+# Set BANNER (e.g. on the test deployment) to show a warning strip on every page.
+BANNER = os.environ.get("BANNER", "").strip()
+
+
+@app.after_request
+def add_banner(resp):
+    if BANNER and resp.mimetype == "text/html" and not resp.direct_passthrough:
+        strip = ('<div style="position:sticky;top:0;z-index:9999;background:#f59e0b;color:#111;'
+                 'font:600 12px/1.4 system-ui,sans-serif;text-align:center;padding:5px 12px">'
+                 f'{html.escape(BANNER)}</div>')
+        resp.set_data(resp.get_data(as_text=True).replace("<body>", "<body>" + strip, 1))
+    return resp
 
 
 def admin_required(view):
