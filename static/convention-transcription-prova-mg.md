@@ -1,6 +1,6 @@
 # Convention de transcription PROVA-MG
 
-**Version : CONVENTION_VERSION v1.1**
+**Version : CONVENTION_VERSION v1.2**
 Parole malgache, avec code-switching malgache-français.
 
 Ce guide s'adresse aux transcripteurs. Chaque règle est accompagnée d'exemples et de remarques. En cas de doute, cocher l'indicateur adapté plutôt que deviner.
@@ -228,7 +228,7 @@ La règle 1 (verbatim) impose de garder les vraies répétitions. Il faut donc d
 ## 8. Segmentation
 
 - **Un seul locuteur** par segment.
-- Durée **entre 2 et 30 secondes**.
+- Durée **entre 2 et 30 secondes** (exception : réponse courte avec contenu, voir 8.2).
 - Couper sur une **pause naturelle**, jamais au milieu d'un mot.
 
 | Situation | Action |
@@ -239,6 +239,60 @@ La règle 1 (verbatim) impose de garder les vraies répétitions. Il faut donc d
 | Cantique pendant un culte | Région *Exclu*, raison *chant / musique* |
 
 > **Remarque.** La limite de 30 secondes vient de Whisper, qui traite l'audio par fenêtres de 30 secondes. Un segment plus long serait coupé arbitrairement à l'entraînement.
+
+### 8.1 Deux locuteurs de dialectes différents qui alternent
+
+Exemple : podcast de 18 s. L'animateur (merina) pose une question, l'invité (betsimisaraka) répond.
+
+- 0 à 9 s : animateur
+- 9 à 18 s : invité
+
+On **coupe au changement de tour**, sur la pause entre les deux.
+
+| Segment | Locuteur | Dialecte | Registre |
+|---|---|---|---|
+| 0 à 9 s | `S1` (animateur) | `officiel (merina standard)` | `spontané` |
+| 9 à 18 s | `S2` (invité) | `betsimisaraka` | `spontané` |
+
+> **Remarque.** Un segment contenant les deux voix ne peut pas recevoir un seul dialecte correct. Il serait faux pour la moitié de son contenu.
+
+### 8.2 Réponse très courte (moins de 2 s)
+
+Exemple : l'animateur parle 12 s, l'invité dit *"Eny"* (1 s), l'animateur reprend.
+
+| Cas | Exemple | Action |
+|---|---|---|
+| Acquiescement sans contenu | `Eny`, `Ie`, `Hmm` | Pas de segment. On le laisse de côté. |
+| Réponse courte avec contenu | `Tsia, tsy marina izany.` | Segment à part, même sous 2 s. |
+
+Si l'acquiescement chevauche la voix de l'animateur, on ne le transcrit pas dans le segment de l'animateur.
+
+> **Remarque.** Un acquiescement isolé n'apporte presque rien au modèle, alors qu'une réponse avec contenu contient du vocabulaire réel. On garde donc la seconde malgré sa durée.
+
+### 8.3 Les deux parlent en même temps
+
+- Deux segments séparés, indicateur *chevauchement de voix* sur les deux.
+- Si le chevauchement rend une des voix incompréhensible, cette partie passe en région *Exclu*, raison *trop de chevauchement*.
+
+| Situation | Action |
+|---|---|
+| L'invité commence sa phrase pendant les 2 dernières secondes de l'animateur, les deux restent compréhensibles | Deux segments + *chevauchement de voix* |
+| Les deux parlent fort en même temps pendant 5 s | Ces 5 s en *Exclu* |
+
+### 8.4 Un locuteur qui change de dialecte
+
+Les locuteurs s'adaptent souvent à leur interlocuteur. Un invité betsimisaraka face à un animateur merina peut parler surtout en malgache officiel, puis revenir à son dialecte quand il est plus détendu.
+
+**Règle : le champ Dialecte décrit ce qu'on entend dans le segment, pas l'origine du locuteur.**
+
+| Segment | Ce qu'on entend | Locuteur | Dialecte |
+|---|---|---|---|
+| Début de l'interview | Formes standard | `S2` | `officiel (merina standard)` |
+| Plus tard, en racontant un souvenir d'enfance | Formes dialectales | `S2` | `betsimisaraka` |
+
+Le locuteur reste `S2` dans les deux cas : c'est ce qui garde le lien avec la personne.
+
+> **Remarque.** Ces cas sont précieux pour la thèse. Une même voix qui produit deux variétés permet au modèle de distinguer l'identité du locuteur et le dialecte, deux choses qui sont sinon toujours confondues.
 
 ---
 
@@ -263,7 +317,7 @@ La règle 1 (verbatim) impose de garder les vraies répétitions. Il faut donc d
 | Variété régionale | Mots ou formes dialectales (ex. `zaho` au Sud), intonation régionale |
 | `autre / incertain` | Aucun indice clair |
 
-> **Remarque.** Ne pas forcer. Un `incertain` honnête est préférable à une variété devinée.
+> **Remarque.** Ne pas forcer. Un `incertain` honnête est préférable à une variété devinée. Le dialecte se juge segment par segment, d'après ce qui est entendu, pas d'après l'origine connue du locuteur (voir 8.4).
 
 ### Registre (obligatoire)
 
@@ -329,6 +383,7 @@ Chaque annotation porte la version de la convention.
 
 - `v1.0` : convention initiale.
 - `v1.1` : ajout de la règle du tiret pour les mots hybrides (`mi-confirmer`). Les annotations `v1.0` contenant `mikonfirmé` sont repérables et corrigeables automatiquement.
+- `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 
 ### Lexique partagé
 
@@ -350,6 +405,10 @@ Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la co
 | J'entends mais je doute ? | `((mot))` + indicateur *incertain*. |
 | Whisper répète une phrase ? | Réécouter, garder seulement ce qui est dit. |
 | Musique ou chant ? | Région *Exclu*. |
+| Deux locuteurs dans le segment ? | Couper au changement de tour. |
+| *"Eny"* isolé de l'interlocuteur ? | Pas de segment. |
+| Réponse courte avec contenu ? | Segment à part, même sous 2 s. |
+| Le locuteur change de dialecte ? | Dialecte selon ce qu'on entend, même `S`. |
 | Cas non prévu ? | Indicateur + signaler au responsable. |
 
 ---
@@ -359,6 +418,7 @@ Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la co
 Mesures prises **avant** la transcription humaine pour réduire les boucles et hallucinations du brouillon Whisper :
 
 - **VAD avant Whisper** (ex. Silero VAD) : silences et musique retirés, Whisper ne reçoit que de la parole.
+- **Diarisation avant Whisper** (ex. pyannote) : l'audio est pré-découpé aux changements de locuteur. Whisper ne sépare pas les voix, donc sans diarisation son brouillon enchaîne les tours. Les transcripteurs ajustent alors les frontières au lieu de les chercher.
 - `condition_on_previous_text=False` : une boucle dans une fenêtre de 30 s ne contamine pas la suivante.
 - `compression_ratio_threshold` (2.4 par défaut) : un texte très répétitif se compresse anormalement bien, ce qui déclenche un nouveau décodage.
 - `no_speech_threshold` : supprime la sortie quand le modèle estime qu'il n'y a pas de parole.
