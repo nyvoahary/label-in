@@ -102,6 +102,8 @@
   .conv-errors:empty { display: none; }
   .actions .save.excl { background: var(--muted); border-color: var(--muted); }
 
+  .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0 0 0 6px; text-decoration: underline; }
+
   /* Tag bar and live checks */
   .tagbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
   .tagbar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
@@ -699,6 +701,8 @@ function select(idx) {
   document.getElementById("content").innerHTML = `
     <div class="meta-row">
       <span><b>${escapeHtml(t.audio)}</b></span>
+      ${t.split_of ? `<span title="Découpé depuis ${escapeHtml(t.split_of)}">✂ partie d'une découpe
+        <button type="button" id="unsplitBtn" class="linkbtn">Annuler la découpe</button></span>` : ""}
       <span>start: <b>${t.start ?? "—"}</b></span>
       <span>end: <b>${t.end ?? "—"}</b></span>
       <span>duration: <b>${dur}</b></span>
@@ -712,6 +716,8 @@ function select(idx) {
         <span class="sep"></span>
         <button id="loopBtn" class="${state.loop ? "active" : ""}" title="Toggle loop (L)">↻ Loop</button>
         <button id="clearLoopBtn" title="Clear loop region (\\)">✕ Clear</button>
+        ${state.conv ? `<span class="sep"></span>
+        <button id="splitBtn" title="Couper le segment à la position de lecture, au changement de locuteur (règles 8.1 / 8.5). Le texte est réparti au curseur.">✂ Couper ici</button>` : ""}
         <label class="toggle-switch" title="Toggle autoplay on next task" style="margin-left:4px">
           <input type="checkbox" id="autoplayBtn">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -824,6 +830,10 @@ function select(idx) {
   document.getElementById("markPending").onclick = () => save(false, "pending");
   document.getElementById("markReview").onclick = () => save(false, "review");
   wireConventionPanel();
+  const splitBtn = document.getElementById("splitBtn");
+  if (splitBtn) splitBtn.onclick = () => splitSegment(idx);
+  const unsplitBtn = document.getElementById("unsplitBtn");
+  if (unsplitBtn) unsplitBtn.onclick = () => unsplitSegment(idx);
 
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
@@ -1062,7 +1072,8 @@ function prepareMeta(t) {
     for (const k of CARRIED) {
       if (!meta[k] && prev[k]) {
         meta[k] = prev[k];
-        if (RECHECK.includes(k)) state.unconfirmed.add(k);
+        // A split is made at a speaker change, so the speaker is re-checked too.
+        if (RECHECK.includes(k) || (k === "speaker" && t.split_of)) state.unconfirmed.add(k);
       }
     }
   }
@@ -1191,6 +1202,51 @@ function wireConventionPanel() {
   runLiveCheck();
 }
 
+// --- Split a segment at a speaker change (rules 8.1 / 8.5) --------------------------------
+// The audio is cut at the playback position; the text is shared out at the text cursor.
+async function reloadTasks(selectIdx) {
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks`);
+  state.tasks = (await r.json()).tasks;
+  renderSidebar();
+  if (state.tasks.length) select(Math.min(Math.max(selectIdx, 0), state.tasks.length - 1));
+}
+
+async function splitSegment(idx) {
+  const t = state.tasks[idx], ta = document.getElementById("annotation");
+  if (!state.ws || !t || !ta) return;
+  state.ws.pause();
+  const at = state.ws.getCurrentTime(), dur = state.ws.getDuration();
+  if (at < 0.2 || at > dur - 0.2) {
+    alert("Placez d'abord la lecture au changement de locuteur : cliquez sur la forme d'onde à l'endroit de la coupe.");
+    return;
+  }
+  const cursor = document.activeElement === ta ? ta.selectionStart : savedCursor;
+  const textA = ta.value.slice(0, cursor).trim(), textB = ta.value.slice(cursor).trim();
+  const short = s => s ? `« ${s.length > 60 ? s.slice(0, 60) + "…" : s} »` : "(vide)";
+  if (!confirm(`Couper ce segment à ${at.toFixed(2)} s ?\n\n`
+      + `Partie 1 (0 – ${at.toFixed(2)} s) : ${short(textA)}\n`
+      + `Partie 2 (${at.toFixed(2)} – ${dur.toFixed(2)} s) : ${short(textB)}\n\n`
+      + "Le texte est réparti à la position du curseur dans la transcription. "
+      + "Locuteur, langue et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}/split`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio: t.audio, at, text_a: textA, text_b: textB }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(j.error || `Découpe impossible (HTTP ${r.status}).`); if (j.stale) reloadTasks(idx); return; }
+  await reloadTasks(idx);
+}
+
+async function unsplitSegment(idx) {
+  const t = state.tasks[idx];
+  if (!t || !confirm("Annuler la découpe ? Les deux parties redeviennent le segment d'origine, "
+      + "avec la transcription qu'il avait avant la découpe. Le travail fait sur les deux parties sera perdu.")) return;
+  const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/split/${encodeURIComponent(t.audio)}`, { method: "DELETE" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(j.error || `Annulation impossible (HTTP ${r.status}).`); return; }
+  await reloadTasks(j.index);
+}
+
 // --- Tag bar ----------------------------------------------------------------------------
 // Inserts a tag at the cursor; "(())" wraps the selection as an uncertain word and ticks the
 // matching flag (the convention requires it with ((mot))).
@@ -1311,7 +1367,7 @@ async function autoSave() {
     const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, status, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
+      body: JSON.stringify({ text, status, audio: state.tasks[idx].audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
       signal: controller.signal,
     });
     const j = await r.json();
@@ -1354,9 +1410,16 @@ async function save(advance, statusOverride) {
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, status, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
+    body: JSON.stringify({ text, status, audio: state.tasks[idx].audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
   });
   const j = await r.json();
+  if (j.stale) {
+    // Keep the typed text where possible (the clipboard needs https).
+    try { await navigator.clipboard.writeText(text); } catch (e) { /* not available */ }
+    alert("La liste des segments a changé : quelqu'un a découpé un segment. Elle va être rechargée, "
+      + "puis enregistrez de nouveau. Votre texte a été copié dans le presse-papiers si le navigateur le permet.");
+    return reloadTasks(idx);
+  }
   if (!j.ok && j.errors) {
     showConventionErrors(j.errors);
     document.getElementById("saveStatus").textContent = "";

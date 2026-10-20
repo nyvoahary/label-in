@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import time
+import wave
 import zipfile
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -397,6 +398,7 @@ def api_tasks(name: str):
             "updated_by": (anno or {}).get("updated_by"),
             "meta": (anno or {}).get("meta"),
             "convention": (anno or {}).get("convention"),
+            "split_of": d.get("split_of"),
         })
     return jsonify({"project": name, "tasks": out, "count": len(out)})
 
@@ -485,6 +487,10 @@ def api_save(name: str, idx: int):
     meta = convention.clean_meta(payload["meta"]) if "meta" in payload else None
 
     audio = task_audio(tasks[idx])
+    if payload.get("audio") and payload["audio"] != audio:
+        # The segment list changed under this editor (e.g. someone split a segment).
+        return jsonify({"ok": False, "stale": True,
+                        "errors": ["La liste des segments a changé (découpe). Rechargez la page."]}), 409
     with annotations_lock:
         return _save_one(project, idx, audio, text, status, meta)
 
@@ -524,6 +530,152 @@ def _save_one(project: dict, idx: int, audio: str, text: str, status: str, meta:
         annos[audio]["updated_by"] = current_user()
     save_annotations(project, annos)
     return jsonify({"ok": True, "annotation": annos[audio]})
+
+
+# --- Split a segment at a speaker change (convention rules 8.1 / 8.5) -------------------------
+# The clip is cut in two WAV files and the task replaced by two tasks. The original clip, task
+# and annotation are kept in <project>/.split/ so the split can be undone.
+
+SPLIT_MIN_PART = 0.2  # seconds
+
+
+def _split_dir(project: dict) -> Path:
+    return project["dir"] / ".split"
+
+
+def _split_log(project: dict) -> list[dict]:
+    path = _split_dir(project) / "splits.json"
+    return json.loads(path.read_text("utf-8")) if path.exists() else []
+
+
+def _write_json(path: Path, data) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(path)
+
+
+def _reindex(tasks: list, annos: dict) -> None:
+    for i, t in enumerate(tasks):
+        if task_audio(t) in annos:
+            annos[task_audio(t)]["index"] = i
+
+
+def _free_name(folder: Path, stem: str, suffix: str) -> str:
+    name, n = f"{stem}{suffix}", 1
+    while (folder / name).exists() or (folder / ".split" / name).exists():
+        n += 1
+        name = f"{stem}{suffix[:-4]}{n}.wav"
+    return name
+
+
+@app.route("/api/projects/<name>/tasks/<int:idx>/split", methods=["POST"])
+def api_split(name: str, idx: int):
+    """Body: {audio, at (seconds from the clip start), text_a, text_b}."""
+    project = get_project(name)
+    body = request.get_json(force=True) or {}
+    with annotations_lock:
+        tasks = load_tasks(project)
+        if idx < 0 or idx >= len(tasks):
+            abort(404)
+        task = tasks[idx]
+        audio = task_audio(task)
+        if body.get("audio") != audio:
+            return jsonify({"error": "La liste des segments a changé. Rechargez la page.", "stale": True}), 409
+        src = project["dir"] / audio
+        if src.suffix.lower() != ".wav" or not src.is_file():
+            return jsonify({"error": "Seuls les fichiers WAV peuvent être découpés."}), 400
+        try:
+            at = float(body.get("at"))
+            with wave.open(str(src), "rb") as w:
+                params, frames = w.getparams(), w.readframes(w.getnframes())
+        except (TypeError, ValueError, wave.Error) as e:
+            return jsonify({"error": f"Découpe impossible : {e}"}), 400
+        duration = params.nframes / params.framerate
+        if not SPLIT_MIN_PART <= at <= duration - SPLIT_MIN_PART:
+            return jsonify({"error": f"Point de coupe hors du segment (0 à {duration:.2f} s, "
+                                     f"au moins {SPLIT_MIN_PART} s de chaque côté)."}), 400
+        cut = round(at * params.framerate) * params.sampwidth * params.nchannels
+
+        stem = Path(audio).stem
+        part_a = _free_name(project["dir"], stem, "_a.wav")
+        part_b = _free_name(project["dir"], stem, "_b.wav")
+        for part, chunk in ((part_a, frames[:cut]), (part_b, frames[cut:])):
+            tmp = project["dir"] / f".{part}.part"
+            with wave.open(str(tmp), "wb") as w:
+                w.setparams(params)
+                w.writeframes(chunk)
+            tmp.replace(project["dir"] / part)
+
+        data = task.get("data", {})
+        start = data.get("start")
+        mid = round(start + at, 3) if isinstance(start, (int, float)) else None
+        new_tasks = []
+        for part, (s, e) in ((part_a, (start, mid)), (part_b, (mid, data.get("end")))):
+            t = json.loads(json.dumps(task))
+            t["data"]["audio"] = part
+            t["data"]["split_of"] = audio
+            if mid is not None:
+                t["data"]["start"], t["data"]["end"] = s, e
+            # The automatic drafts still cover the whole original clip.
+            for p in t.get("predictions") or []:
+                p["model_version"] = f"{p.get('model_version') or 'unknown'} · segment entier"
+            new_tasks.append(t)
+
+        annos = load_annotations(project)
+        original = annos.pop(audio, None)
+        # Recording-level fields carry over; speaker, language and dialect are judged per part.
+        keep = {k: v for k, v in ((original or {}).get("meta") or {}).items() if k in ("register", "quality")}
+        now = datetime.now(timezone.utc).isoformat()
+        for part, text in ((part_a, body.get("text_a")), (part_b, body.get("text_b"))):
+            annos[part] = {"audio": part, "text": (text or "").strip(), "status": "autosave", "updated_at": now,
+                           "meta": {**keep, "flags": []}}
+            if current_user():
+                annos[part]["updated_by"] = current_user()
+
+        tasks[idx:idx + 1] = new_tasks
+        _reindex(tasks, annos)
+        split_dir = _split_dir(project)
+        split_dir.mkdir(exist_ok=True)
+        log = _split_log(project)
+        log.append({"audio": audio, "parts": [part_a, part_b], "at": at, "task": task, "annotation": original,
+                    "by": current_user(), "when": now})
+        src.replace(split_dir / audio)
+        _write_json(split_dir / "splits.json", log)
+        _write_json(project["tasks_file"], tasks)
+        save_annotations(project, annos)
+    return jsonify({"ok": True, "parts": [part_a, part_b], "index": idx})
+
+
+@app.route("/api/projects/<name>/split/<path:part>", methods=["DELETE"])
+def api_unsplit(name: str, part: str):
+    """Undo the split that produced `part`: the two parts become the original segment again."""
+    project = get_project(name)
+    with annotations_lock:
+        log = _split_log(project)
+        entry = next((e for e in log if part in e["parts"]), None)
+        if entry is None:
+            return jsonify({"error": "Ce segment ne vient pas d'une découpe."}), 404
+        tasks = load_tasks(project)
+        audios = [task_audio(t) for t in tasks]
+        a, b = entry["parts"]
+        if a not in audios or b not in audios or audios.index(b) != audios.index(a) + 1:
+            return jsonify({"error": "Une des deux parties a été redécoupée : annuler d'abord cette découpe-là."}), 409
+        pos = audios.index(a)
+        tasks[pos:pos + 2] = [entry["task"]]
+        annos = load_annotations(project)
+        for p in (a, b):
+            annos.pop(p, None)
+        if entry.get("annotation"):
+            annos[entry["audio"]] = entry["annotation"]
+        _reindex(tasks, annos)
+        (_split_dir(project) / entry["audio"]).replace(project["dir"] / entry["audio"])
+        for p in (a, b):
+            (project["dir"] / p).unlink(missing_ok=True)
+        log.remove(entry)
+        _write_json(_split_dir(project) / "splits.json", log)
+        _write_json(project["tasks_file"], tasks)
+        save_annotations(project, annos)
+    return jsonify({"ok": True, "index": pos, "audio": entry["audio"]})
 
 
 @app.route("/api/projects/<name>/tasks/<int:idx>/check", methods=["POST"])
