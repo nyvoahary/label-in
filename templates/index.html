@@ -119,6 +119,7 @@
   .live .item.warn { color: var(--pending); border-color: rgba(234,179,8,.35); background: rgba(234,179,8,.06); }
   .live .item .kind { font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; white-space: nowrap; }
   .live .item .msg { flex: 1; color: var(--text); }
+  .live .item .msg a { color: var(--accent); }
   .live .item button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
     padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
   .live .item button:hover { border-color: var(--accent); }
@@ -775,7 +776,7 @@ function select(idx) {
       <kbd>L</kbd> Toggle loop ·
       <kbd>\\</kbd> Clear loop ·
       <kbd>Ctrl</kbd>+<kbd>D</kbd> Copy prediction ·
-      <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>5</kbd> Balises
+      <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>${state.conv ? state.conv.tags.length + 1 : 5}</kbd> Balises
       <br><span style="color:var(--muted)">Tip: drag on the waveform to draw a loop region. Click a word in the prediction to replace the word at your cursor; select multiple words then click to insert the selection.</span>
     </div>
   `;
@@ -1132,7 +1133,7 @@ function conventionPanelHtml(t) {
   return `
     <div class="conv ${state.excluded ? "is-excluded" : ""}" id="conv">
       <div class="conv-head"><span>Convention PROVA-MG <b>${escapeHtml(c.version)}</b></span>${stateLabel}
-        <a href="/static/convention-transcription-prova-mg.md" target="_blank" rel="noopener">Lire la convention ↗</a></div>
+        <a href="/convention" target="labelin-convention">Lire la convention ↗</a></div>
       <div class="conv-grid">
         ${field("lang", "Langue *", seg("lang", c.langs))}
         ${field("register", "Registre *", seg("register", c.registers))}
@@ -1263,6 +1264,8 @@ function insertTag(tag) {
     caret = word ? start + insert.length : start + 2;
     if (!state.meta.flags.includes("transcription incertaine")) toggleFlag("transcription incertaine", true);
   } else {
+    if (tag === "[personnel]" && state.conv.flags.includes("données personnelles")
+        && !state.meta.flags.includes("données personnelles")) toggleFlag("données personnelles", true);
     const before = start > 0 && !/\s/.test(v[start - 1]) ? " " : "";
     const after = /^\s/.test(v.slice(end)) ? "" : " ";
     insert = before + tag + after;
@@ -1305,6 +1308,12 @@ async function runLiveCheck() {
   } catch (e) { /* the save-time check still applies */ }
 }
 
+// "(règle 8.5)" in a message links to that rule on the convention page.
+function ruleLinks(html) {
+  return html.replace(/(règles? )(\d+(?:\.\d+)?)/g, (_, w, n) =>
+    `${w}<a href="/convention#regle-${n.replace(".", "-")}" target="labelin-convention">${n}</a>`);
+}
+
 function renderLiveChecks({ errors, warnings }) {
   const box = document.getElementById("liveChecks");
   if (!box) return;
@@ -1313,7 +1322,7 @@ function renderLiveChecks({ errors, warnings }) {
   box.innerHTML = items.map((i, n) => `
     <div class="item ${i.kind}">
       <span class="kind">${i.kind === "err" ? "bloquant" : "à vérifier"}</span>
-      <span class="msg">${escapeHtml(i.msg)}</span>
+      <span class="msg">${ruleLinks(escapeHtml(i.msg))}</span>
       ${i.fix ? `<button type="button" data-fix="${n}">${escapeHtml(i.fix.label)}</button>` : ""}
     </div>`).join("");
   box.querySelectorAll("[data-fix]").forEach(b => {
@@ -1513,7 +1522,7 @@ document.addEventListener("keydown", (e) => {
     if (ta) ta.value = (cur?.predictions?.[0]?.text) || cur?.prediction || "";
     return;
   }
-  // Alt+1…5: insert [euh], [rire], [bruit], [inaudible], ((mot)).
+  // Alt+1…n: insert the allowed tags in schema order, then ((mot)).
   if (e.altKey && !e.ctrlKey && state.conv && /^Digit[1-9]$/.test(e.code)) {
     const tags = [...state.conv.tags, "(())"];
     const tag = tags[+e.code.slice(5) - 1];

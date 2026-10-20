@@ -1,30 +1,120 @@
 {
-  "convention_version": "v1.3",
+  "convention_version": "v1.4",
   "segment": {
     "min_duration_s": 2,
     "max_duration_s": 30,
-    "labels": ["Parole", "Exclu"]
+    "labels": [
+      "Parole",
+      "Exclu"
+    ]
   },
   "fields": [
-    {"name": "transcription", "type": "text", "required_if": {"label": "Parole"}},
-    {"name": "langue", "type": "single", "required_if": {"label": "Parole"},
-     "values": ["mg", "fr", "mixte", "autre"]},
-    {"name": "dialecte", "type": "single", "required_if": {"label": "Parole"},
-     "values": ["officiel (merina standard)", "betsileo", "betsimisaraka", "sakalava",
-                "antandroy", "antakarana", "autre / incertain", "plusieurs"]},
-    {"name": "registre", "type": "single", "required_if": {"label": "Parole"},
-     "values": ["lu", "semi-préparé", "spontané"]},
-    {"name": "qualite", "type": "single", "required_if": {"label": "Parole"},
-     "values": ["propre", "bruit léger", "bruit fort", "musique de fond"]},
-    {"name": "locuteur", "type": "text", "required_if": {"label": "Parole"},
-     "pattern": "^S[0-9]+(\\+S[0-9]+)*$", "example": "S1, S2, S1+S2"},
-    {"name": "indicateurs", "type": "multi", "required": false,
-     "values": ["chevauchement de voix", "transcription incertaine", "nom propre à vérifier",
-                "emprunt ambigu", "plusieurs locuteurs"]},
-    {"name": "raison_exclusion", "type": "single", "required_if": {"label": "Exclu"},
-     "values": ["inaudible", "chant / musique", "autre langue", "trop de chevauchement"]}
+    {
+      "name": "transcription",
+      "type": "text",
+      "required_if": {
+        "label": "Parole"
+      }
+    },
+    {
+      "name": "langue",
+      "type": "single",
+      "required_if": {
+        "label": "Parole"
+      },
+      "values": [
+        "mg",
+        "fr",
+        "mixte",
+        "autre"
+      ]
+    },
+    {
+      "name": "dialecte",
+      "type": "single",
+      "required_if": {
+        "label": "Parole"
+      },
+      "values": [
+        "officiel (merina standard)",
+        "betsileo",
+        "betsimisaraka",
+        "sakalava",
+        "antandroy",
+        "antakarana",
+        "autre / incertain",
+        "plusieurs"
+      ]
+    },
+    {
+      "name": "registre",
+      "type": "single",
+      "required_if": {
+        "label": "Parole"
+      },
+      "values": [
+        "lu",
+        "semi-préparé",
+        "spontané"
+      ]
+    },
+    {
+      "name": "qualite",
+      "type": "single",
+      "required_if": {
+        "label": "Parole"
+      },
+      "values": [
+        "propre",
+        "bruit léger",
+        "bruit fort",
+        "musique de fond"
+      ]
+    },
+    {
+      "name": "locuteur",
+      "type": "text",
+      "required_if": {
+        "label": "Parole"
+      },
+      "pattern": "^S[0-9]+(\\+S[0-9]+)*$",
+      "example": "S1, S2, S1+S2"
+    },
+    {
+      "name": "indicateurs",
+      "type": "multi",
+      "required": false,
+      "values": [
+        "chevauchement de voix",
+        "transcription incertaine",
+        "nom propre à vérifier",
+        "emprunt ambigu",
+        "plusieurs locuteurs",
+        "données personnelles"
+      ]
+    },
+    {
+      "name": "raison_exclusion",
+      "type": "single",
+      "required_if": {
+        "label": "Exclu"
+      },
+      "values": [
+        "inaudible",
+        "chant / musique",
+        "autre langue",
+        "trop de chevauchement",
+        "contenu sensible"
+      ]
+    }
   ],
-  "allowed_tags": ["[euh]", "[rire]", "[bruit]", "[inaudible]"],
+  "allowed_tags": [
+    "[euh]",
+    "[rire]",
+    "[bruit]",
+    "[inaudible]",
+    "[personnel]"
+  ],
   "uncertain_word_syntax": "((mot))",
   "speaker_tag_syntax": "[S1]",
   "validation": [
@@ -33,13 +123,34 @@
     "((mot)) dans le texte implique indicateur 'transcription incertaine'",
     "pas de chiffres dans la transcription (nombres en lettres)",
     "balise entre crochets hors allowed_tags et [S1]... : refusée",
-    "segment < 2 s autorisé seulement si réponse courte avec contenu (règle 8.2)"
+    "segment < 2 s autorisé seulement si réponse courte avec contenu (règle 8.2)",
+    "[personnel] dans le texte implique indicateur 'données personnelles'",
+    "apostrophe typographique ’ refusée (utiliser ')"
   ],
   "export": {
     "exclude_from_train_if": [
-      {"label": "Exclu"},
-      {"indicateurs_contains": "plusieurs locuteurs"}
+      {
+        "label": "Exclu"
+      },
+      {
+        "indicateurs_contains": "plusieurs locuteurs"
+      },
+      {
+        "indicateurs_contains": "données personnelles"
+      }
     ],
-    "stamp_fields": ["convention_version", "norm_version"]
-  }
+    "stamp_fields": [
+      "convention_version",
+      "norm_version"
+    ],
+    "exclude_from_publication_until_audio_masked_if": [
+      {
+        "indicateurs_contains": "données personnelles"
+      }
+    ]
+  },
+  "forbidden_chars": [
+    "’",
+    "‘"
+  ]
 }

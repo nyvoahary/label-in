@@ -35,6 +35,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import accounts
 import convention
+import convention_page
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -401,6 +402,11 @@ def api_tasks(name: str):
             "split_of": d.get("split_of"),
         })
     return jsonify({"project": name, "tasks": out, "count": len(out)})
+
+
+@app.route("/convention")
+def convention_doc():
+    return render_template("convention.html", page=convention_page.render(), user=current_user())
 
 
 @app.route("/api/projects/<name>/convention")

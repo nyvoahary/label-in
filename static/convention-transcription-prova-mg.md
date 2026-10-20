@@ -1,6 +1,6 @@
 # Convention de transcription PROVA-MG
 
-**Version : CONVENTION_VERSION v1.3**
+**Version : CONVENTION_VERSION v1.4**
 Parole malgache, avec code-switching malgache-français.
 
 Ce guide s'adresse aux transcripteurs. Chaque règle est accompagnée d'exemples et de remarques. En cas de doute, cocher l'indicateur adapté plutôt que deviner.
@@ -58,6 +58,20 @@ On **ne convertit pas** vers le malgache officiel (merina). La variété se rens
 | Locuteur du Sud | `zaho tsy mahay` | `aho tsy mahay` |
 
 > **Remarque.** Convertir un dialecte en merina efface précisément l'information que la thèse veut modéliser (variation dialectale). Un mot dialectal correctement transcrit vaut plus qu'un mot "standardisé".
+
+### Apostrophes et tirets
+
+**Une seule apostrophe autorisée : l'apostrophe droite `'`.** L'apostrophe typographique `’` (souvent insérée automatiquement par Word ou le téléphone) est interdite.
+
+| Cas | Correct | Incorrect |
+|---|---|---|
+| Élision avec apostrophe | `an'ny`, `tamin'ny`, `afak'omaly`, `nataon'i Rabe` | `anny`, `an ny`, `an’ny` |
+| Préfixe de lieu avec tiret | `an-tsena`, `an-trano` | `antsena`, `an tsena` |
+| Redoublement : un seul mot, sans tiret | `tsaratsara`, `kelikely` | `tsara-tsara`, `tsara tsara` |
+
+> **Remarque.** Pour la machine, `an'ny` et `an’ny` sont deux mots différents. Une seule apostrophe de travers suffit à créer un faux mot dans le vocabulaire et une fausse erreur dans le calcul du WER. L'application refuse donc `’` à l'enregistrement.
+
+En cas de doute sur la graphie d'un mot composé : consulter le lexique partagé, sinon cocher *transcription incertaine*.
 
 ---
 
@@ -126,7 +140,9 @@ Toujours **en toutes lettres**, dans **la langue réellement parlée**.
 |---|---|---|
 | Montant en malgache | `telo arivo ariary` | `3000 Ar` |
 | Heure en français (très fréquent) | `amin'ny huit heures` | `amin'ny 8h` / `amin'ny valo ora` |
-| Numéro de téléphone dicté | `zero telo efatra...` | `034...` |
+| Numéro de téléphone d'une personne privée | `[personnel]` (voir règle 6.1) | `zero telo efatra...` ou `034...` |
+| Numéro public (standard d'une radio, d'une institution) | `zero telo efatra...` | `034...` |
+| Verset biblique | Le lecteur dit *"Jaona toko fahatelo, andininy fahenina ambin'ny folo"* : on écrit exactement ces mots | `Jaona 3:16` |
 | Date mixte | `ny vingt-cinq octobre` | `ny 25/10` |
 
 > **Remarque.** La conversion en chiffres se fait plus tard, automatiquement (normalisation). Si le transcripteur écrit "8h", on ne sait plus si le locuteur a dit "huit heures" ou "valo ora". L'information est perdue.
@@ -148,6 +164,23 @@ Toujours **en toutes lettres**, dans **la langue réellement parlée**.
 | Titre dit en malgache | `dokotera Rabe` (pas `Dr Rabe`) |
 | Titre dit en français | `docteur Rabe` |
 
+### 5.1 Majuscule et point : la phrase décide, pas le segment
+
+La majuscule marque le **début réel d'une phrase**, pas le début du segment. Même logique pour le point final.
+
+- Le segment commence au milieu d'une phrase : **pas de majuscule**.
+- Le segment s'arrête au milieu d'une phrase : **pas de point final**.
+- Un nom propre garde toujours sa majuscule, où qu'il soit.
+
+Phrase dite : *"Rehefa tonga tany Toamasina izahay dia nivory tao amin'ny fiangonana izahay."*, coupée en deux segments à une pause.
+
+| Segment | Correct | Incorrect |
+|---|---|---|
+| 1 | `Rehefa tonga tany Toamasina izahay` | `Rehefa tonga tany Toamasina izahay.` |
+| 2 | `dia nivory tao amin'ny fiangonana izahay.` | `Dia nivory tao amin'ny fiangonana izahay.` |
+
+> **Remarque.** Si chaque segment commence par une majuscule, le modèle associe la majuscule au début de l'audio au lieu du début de phrase. En production, il mettra des majuscules et des points au milieu des phrases. Pour le WER, ça ne change rien (la normalisation retire casse et ponctuation), mais c'est la qualité du texte produit qui en souffre.
+
 ---
 
 ## 6. Balises
@@ -161,8 +194,29 @@ Liste **fermée** : n'utiliser que ces balises.
 | `[bruit]` | bruit ponctuel | `Dia lasa izy [bruit] tsy niverina intsony.` |
 | `[inaudible]` | passage incompréhensible | `Hoy izy hoe [inaudible] dia lasa.` |
 | `((mot))` | mot entendu mais incertain | `Nonina tany ((Ambohimanarina)) izy.` |
+| `[personnel]` | donnée personnelle remplacée (règle 6.1) | `Antsoy amin'ny [personnel] aho.` |
 
 > **Remarque.** `[inaudible]` signifie : ne pas deviner. Un mot inventé est pire qu'un trou signalé, car le modèle apprend un faux lien entre le son et le texte.
+
+### 6.1 Données personnelles
+
+Une information qui permet d'identifier ou de contacter **une personne privée** est remplacée par `[personnel]`, et l'indicateur *données personnelles* est coché.
+
+| Type | Dit | Transcription |
+|---|---|---|
+| Téléphone | *"Ny laharako dia zero telo efatra roa..."* | `Ny laharako dia [personnel].` |
+| Adresse | *"Monina ao amin'ny lot IVG 123 Ambohipo aho"* | `Monina ao amin'ny [personnel] aho.` |
+| Nom complet d'un particulier | Un auditeur cite sa voisine par son nom complet | `[personnel]` |
+| Numéro d'identité, de compte | *"Ny kaontiko dia..."* | `[personnel]` |
+
+**On ne remplace pas :**
+- les personnalités publiques dans leur rôle public : pasteur à l'antenne, ministre, présentateur, artiste ;
+- les lieux généraux : `Toamasina`, `Ambohipo` (sans adresse précise) ;
+- les numéros publics : standard d'une radio, d'une institution.
+
+Un segment entier sur un sujet sensible concernant une personne privée identifiable (santé, conflit familial, mineur) : région *Exclu*, raison *contenu sensible*.
+
+> **Remarque.** Ces segments sont **exclus de l'entraînement** et de toute publication tant que l'audio correspondant n'a pas été masqué. Le corpus a vocation à être ouvert à la communauté : un numéro de téléphone transcrit aujourd'hui serait publié demain.
 
 ---
 
@@ -340,6 +394,37 @@ Si les voix se superposent au point d'être incompréhensibles : région *Exclu*
 
 > **Remarque.** Les balises `[S1]`, `[S2]` ne doivent jamais arriver dans les données d'entraînement : le modèle apprendrait à les écrire. Ces segments sont donc **exclus de l'entraînement par défaut** et gardés pour un test de robustesse multi-locuteurs. C'est pourquoi on n'utilise cette solution qu'en dernier recours.
 
+### 8.6 Pause sans changement de locuteur
+
+Une pause seule n'oblige pas à couper. On coupe seulement si une raison l'impose.
+
+| Situation | Action |
+|---|---|
+| Pause courte (moins de 2 s), segment de moins de 30 s | **On ne coupe pas.** La pause reste dans le segment, rien n'est écrit. |
+| Pause longue (2 s ou plus) | **On coupe.** Le silence reste hors des deux segments. |
+| Le segment approche 30 s | **On coupe** sur la meilleure pause, de préférence une fin de phrase. |
+| Pause remplie (*euh*, *eh*, *hmm*) | Ce n'est pas un silence : `[euh]`, on ne coupe pas. |
+
+**Pause courte : un seul segment**
+Dit : *"Nandeha tany an-tsena aho omaly"* (pause d'une seconde) *"ary nividy vary."*
+→ `Nandeha tany an-tsena aho omaly ary nividy vary.`
+
+**Pause longue : on coupe**
+Un prédicateur dit *"Ary hoy Jesoa."*, s'arrête 4 s, puis reprend.
+
+| Segment | Transcription |
+|---|---|
+| 1 | `Ary hoy Jesoa.` |
+| silence de 4 s | hors segment |
+| 2 | `Izaho no lalana sy fahamarinana ary fiainana.` |
+
+Les deux segments gardent le même locuteur (`S1`) et les mêmes paramètres.
+
+**Monologue de 50 s avec plusieurs petites pauses**
+On coupe une fois, vers 25 à 30 s, sur la pause qui tombe en fin de phrase. Pas à chaque pause.
+
+> **Remarque.** Couper à chaque pause produit des segments trop courts (peu de contexte pour le modèle) et des phrases cassées (règle 5.1). À l'inverse, un long silence laissé dans un segment est l'endroit où Whisper hallucine ou boucle (règle 7.4). Les seuils de 2 s et 30 s sont à valider sur les premières heures annotées.
+
 ---
 
 ## 9. Paramètres par segment
@@ -398,6 +483,7 @@ Identifiant par source. Exemple dans une vidéo de culte : `S1` = pasteur, `S2` 
 | nom propre à vérifier | Nom de lieu ou de personne douteux | `((Andrianampoinimerina))` |
 | emprunt ambigu | Cas de la règle 3.6 | `boaty` / `boîte` |
 | plusieurs locuteurs | Région inséparable avec balises (cas 8.5) | `[S1] Rahoviana? [S2] Rahampitso.` |
+| données personnelles | Au moins un `[personnel]` dans le segment (règle 6.1) | `Ny laharako dia [personnel].` |
 
 ### Région Exclu : raisons
 
@@ -407,6 +493,7 @@ Identifiant par source. Exemple dans une vidéo de culte : `S1` = pasteur, `S2` 
 | chant / musique | Cantique, intermède musical |
 | autre langue | Long passage en anglais |
 | trop de chevauchement | Plusieurs personnes parlent en même temps |
+| contenu sensible | Sujet sensible concernant une personne privée identifiable (règle 6.1) |
 
 ---
 
@@ -433,6 +520,7 @@ Chaque annotation porte la version de la convention.
 - `v1.1` : ajout de la règle du tiret pour les mots hybrides (`mi-confirmer`). Les annotations `v1.0` contenant `mikonfirmé` sont repérables et corrigeables automatiquement.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
+- `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
 
 ### Lexique partagé
 
@@ -459,6 +547,11 @@ Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la co
 | Réponse courte avec contenu ? | Segment à part, même sous 2 s. |
 | Le locuteur change de dialecte ? | Dialecte selon ce qu'on entend, même `S`. |
 | Échange trop rapide pour couper ? | Une région, `[S1] ... [S2] ...`, Locuteur `S1+S2`. |
+| Apostrophe ? | Toujours `'`, jamais `’`. |
+| Segment commencé au milieu d'une phrase ? | Pas de majuscule. Fini au milieu : pas de point. |
+| Verset biblique ? | En lettres, tel que lu. |
+| Numéro ou adresse d'un particulier ? | `[personnel]` + indicateur *données personnelles*. |
+| Pause sans changement de locuteur ? | Moins de 2 s : on garde. 2 s ou plus : on coupe. |
 | Cas non prévu ? | Indicateur + signaler au responsable. |
 
 ---
@@ -473,3 +566,9 @@ Mesures prises **avant** la transcription humaine pour réduire les boucles et h
 - `compression_ratio_threshold` (2.4 par défaut) : un texte très répétitif se compresse anormalement bien, ce qui déclenche un nouveau décodage.
 - `no_speech_threshold` : supprime la sortie quand le modèle estime qu'il n'y a pas de parole.
 - **Signalement automatique** : taux de compression gzip calculé pour chaque brouillon, segments suspects marqués pour relecture prioritaire.
+
+Mesures à l'export :
+
+- Segments avec `[personnel]` : exclus de l'entraînement et de toute publication tant que l'audio n'est pas masqué (bip ou silence sur la zone).
+- Segments avec balises `[S1]`, `[S2]` : exclus de l'entraînement, conservés pour le test multi-locuteurs.
+- Chaque annotation exportée porte `convention_version` et `norm_version`.

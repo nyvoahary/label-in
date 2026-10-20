@@ -28,9 +28,19 @@ EXCLUDE_REASONS = tuple(_FIELDS["raison_exclusion"]["values"])
 TAGS = tuple(SCHEMA["allowed_tags"])
 SPEAKER_RE = re.compile(_FIELDS["locuteur"]["pattern"])
 
+FORBIDDEN_CHARS = tuple(SCHEMA.get("forbidden_chars", ()))
+
 FLAG_MULTI = "plusieurs locuteurs"
 FLAG_UNCERTAIN = "transcription incertaine"
+FLAG_PERSONAL = "données personnelles"
+TAG_PERSONAL = "[personnel]"
 DIALECT_MULTI = "plusieurs"
+# Flags that keep a segment out of training (schema: export.exclude_from_train_if).
+NO_TRAIN_FLAGS = tuple(c["indicateurs_contains"] for c in SCHEMA["export"]["exclude_from_train_if"]
+                       if "indicateurs_contains" in c)
+NO_PUBLISH_FLAGS = tuple(c["indicateurs_contains"]
+                         for c in SCHEMA["export"].get("exclude_from_publication_until_audio_masked_if", [])
+                         if "indicateurs_contains" in c)
 
 TAG_RE = re.compile(r"\[[^\[\]]*\]")
 SPEAKER_TAG_RE = re.compile(r"\[(S\d+)\]")
@@ -102,6 +112,13 @@ def text_errors(text: str, meta: dict) -> list[dict]:
     if "((" in text and FLAG_UNCERTAIN not in flags:
         out.append(_issue("Le texte contient ((mot)) : cocher l'indicateur « transcription incertaine ».",
                           {"type": "flag", "value": FLAG_UNCERTAIN, "label": "Cocher « transcription incertaine »"}))
+    if TAG_PERSONAL in text and FLAG_PERSONAL in FLAGS and FLAG_PERSONAL not in flags:
+        out.append(_issue(f"Le texte contient {TAG_PERSONAL} : cocher l'indicateur « {FLAG_PERSONAL} » (règle 6.1).",
+                          {"type": "flag", "value": FLAG_PERSONAL, "label": f"Cocher « {FLAG_PERSONAL} »"}))
+    for ch in FORBIDDEN_CHARS:
+        if ch in text:
+            out.append(_issue(f"Apostrophe typographique {ch} interdite : écrire l'apostrophe droite ' (règle 2).",
+                              {"type": "replace", "from": ch, "to": "'", "label": f"Remplacer {ch} par '"}))
     out += [_issue(unknown_tag_message(t)) for t in unknown_tags(text)]
 
     # Rule 8.5: a segment with several speakers is written [S1] … [S2] …, speaker "S1+S2".
@@ -136,10 +153,9 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
     out = []
     # Text without the markup the convention allows.
     plain = SPEAKER_TAG_RE.sub(" ", TAG_RE.sub(" ", text)).replace("((", " ").replace("))", " ")
-    if "’" in text:
-        out.append(_issue("Apostrophe typographique ’ : écrire l'apostrophe simple '.",
-                          {"type": "replace", "from": "’", "to": "'", "label": "Remplacer ’ par '"}))
-    bad = sorted(set(ALLOWED_CHARS_RE.findall(plain.replace("’", "'"))) - {"_"})
+    for ch in FORBIDDEN_CHARS:  # already reported as errors
+        plain = plain.replace(ch, "'")
+    bad = sorted(set(ALLOWED_CHARS_RE.findall(plain)) - {"_"})
     if bad:
         out.append(_issue(f"Ponctuation non permise : {' '.join(bad)}. Seuls . , ? sont autorisés (règle 5)."))
     for acro in sorted(set(DOTTED_ACRONYM_RE.findall(text))):
@@ -148,10 +164,15 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                           {"type": "replace", "from": acro, "to": fixed, "label": f"Écrire {fixed}"}))
     for title in sorted(set(m.group(0) for m in TITLE_RE.finditer(text))):
         out.append(_issue(f"« {title} » : écrire le titre tel qu'il est prononcé, ex. dokotera Rabe ou docteur Rabe (règle 5)."))
-    first = re.search(r"[^\W\d_]", plain)
-    if first and first.group(0).islower():
-        out.append(_issue("Majuscule en début de phrase (règle 5).",
-                          {"type": "capitalize", "label": "Mettre la majuscule"}))
+    # Rule 5.1: the sentence decides, not the segment (a segment may start mid-sentence), so
+    # only a lowercase letter right after . or ? inside the segment is suspicious.
+    after_stop = sorted(set(m.group(1) for m in re.finditer(r"[.?]\s+(\w+)", plain) if m.group(1)[0].islower()))
+    if after_stop:
+        out.append(_issue(f"Après un point ou un ?, la phrase suivante prend une majuscule : {', '.join(after_stop[:5])} (règle 5.1)."))
+    for word in sorted(set(m.group(0) for m in re.finditer(r"\b(\w+)-(\1)\b", plain, re.I))):
+        joined = word.replace("-", "")
+        out.append(_issue(f"Redoublement « {word} » : un seul mot, sans tiret ({joined}) (règle 2).",
+                          {"type": "replace", "from": word, "to": joined, "label": f"Écrire {joined}"}))
     if meta.get("lang") == "mg":
         words = {w for w in re.split(r"[\s.,?]+", plain) if w}
         foreign = sorted(w for w in words if MG_FORBIDDEN_RE.search(w))
@@ -187,7 +208,10 @@ def export_fields(anno: dict) -> dict:
     for key, name in SCHEMA_NAMES.items():
         if key in meta:
             out[name] = meta[key]
-    out["train"] = not excluded and FLAG_MULTI not in (meta.get("flags") or [])
+    flags = meta.get("flags") or []
+    out["train"] = not excluded and not any(f in flags for f in NO_TRAIN_FLAGS)
+    # Not publishable until the audio is masked (schema: exclude_from_publication_until_audio_masked_if).
+    out["publish"] = not any(f in flags for f in NO_PUBLISH_FLAGS)
     return out
 
 
