@@ -1133,7 +1133,7 @@ function conventionPanelHtml(t) {
   return `
     <div class="conv ${state.excluded ? "is-excluded" : ""}" id="conv">
       <div class="conv-head"><span>Convention PROVA-MG <b>${escapeHtml(c.version)}</b></span>${stateLabel}
-        <a href="/convention" target="labelin-convention">Lire la convention ↗</a></div>
+        <a href="/documentation" target="labelin-convention">Lire la convention ↗</a></div>
       <div class="conv-grid">
         ${field("lang", "Langue *", seg("lang", c.langs))}
         ${field("register", "Registre *", seg("register", c.registers))}
@@ -1311,7 +1311,7 @@ async function runLiveCheck() {
 // "(règle 8.5)" in a message links to that rule on the convention page.
 function ruleLinks(html) {
   return html.replace(/(règles? )(\d+(?:\.\d+)?)/g, (_, w, n) =>
-    `${w}<a href="/convention#regle-${n.replace(".", "-")}" target="labelin-convention">${n}</a>`);
+    `${w}<a href="/documentation#regle-${n.replace(".", "-")}" target="labelin-convention">${n}</a>`);
 }
 
 function renderLiveChecks({ errors, warnings }) {

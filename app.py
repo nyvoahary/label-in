@@ -128,7 +128,7 @@ def _recent_fails(ip: str) -> list[float]:
     return fails
 
 
-PUBLIC_ENDPOINTS = {"login", "logout"}
+PUBLIC_ENDPOINTS = {"login", "logout", "documentation", "convention_doc"}
 
 
 @app.before_request
@@ -404,9 +404,16 @@ def api_tasks(name: str):
     return jsonify({"project": name, "tasks": out, "count": len(out)})
 
 
+@app.route("/documentation")
+def documentation():
+    """The transcription convention, readable without an account (shareable link)."""
+    return render_template("convention.html", page=convention_page.render(), user=current_user())
+
+
 @app.route("/convention")
 def convention_doc():
-    return render_template("convention.html", page=convention_page.render(), user=current_user())
+    # Old address: keep existing links and bookmarks working (the #regle-… anchor is kept by the browser).
+    return redirect(url_for("documentation"), code=301)
 
 
 @app.route("/api/projects/<name>/convention")
