@@ -66,10 +66,15 @@ def problems(status: str, text: str, meta: dict) -> list[str]:
     missing = [label for key, label in labels.items() if not meta.get(key)]
     if missing:
         out.append("Renseigner " + ", ".join(missing) + ".")
-    bad = unknown_tags(text)
-    if bad:
-        out.append(f"Balise inconnue : {' '.join(bad)}. Balises permises : {' '.join(TAGS)}.")
+    out += [unknown_tag_message(t) for t in unknown_tags(text)]
     return out
+
+
+def unknown_tag_message(tag: str) -> str:
+    word = tag[1:-1].strip()
+    hint = (f" Si c'est une hésitation, écrire [euh]. Si « {word} » est vraiment prononcé (interjection), "
+            f"l'écrire sans crochets : {word}." if word else "")
+    return f"Balise inconnue : {tag}.{hint} Balises permises : {' '.join(TAGS)}."
 
 
 def options() -> dict:

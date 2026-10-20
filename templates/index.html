@@ -1062,7 +1062,11 @@ function conventionProblems(text) {
     + " (repris du segment précédent : à juger sur ce segment).");
   const tags = state.conv?.tags || [];
   const bad = [...new Set((text.match(/\[[^\[\]]*\]/g) || []).filter(x => !tags.includes(x)))];
-  if (bad.length) out.push(`Balise inconnue : ${bad.join(" ")}. Balises permises : ${tags.join(" ")}.`);
+  for (const tag of bad) {
+    const word = tag.slice(1, -1).trim();
+    out.push(`Balise inconnue : ${tag}.` + (word ? ` Si c'est une hésitation, écrire [euh]. Si « ${word} » est vraiment `
+      + `prononcé (interjection), l'écrire sans crochets : ${word}.` : "") + ` Balises permises : ${tags.join(" ")}.`);
+  }
   return out;
 }
 
