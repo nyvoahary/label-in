@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import zlib
 from pathlib import Path
 
 SCHEMA = json.loads((Path(__file__).parent / "static" / "annotation-schema.json").read_text("utf-8"))
@@ -193,9 +194,52 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                           "sinon exclure (règle 8.2)."))
     elif duration and duration > 30:
         out.append(_issue("Segment de plus de 30 s : au-delà de la fenêtre de Whisper (règle 8)."))
+    loop = loop_reasons(text, duration)
+    if loop:
+        out.append(_issue("Répétition suspecte dans la transcription (" + " ; ".join(loop) + "). Réécouter et ne "
+                          "garder que ce qui est réellement dit : boucle Whisper ou vraie répétition (règle 7.4)."))
     norm = " ".join(text.split()).lower()
     if norm and any(norm == " ".join((d or "").split()).lower() for d in drafts):
         out.append(_issue("Texte identique au brouillon automatique : le relire mot à mot avant de valider (règle 7)."))
+    return out
+
+
+# --- Whisper loops (rule 7.4, technical annex) -------------------------------------------------
+COMPRESSION_THRESHOLD = 2.4   # Whisper's own compression_ratio_threshold
+MAX_WORDS_PER_SECOND = 6.0    # Malagasy speech rarely goes past 4 to 5 short words per second
+
+
+def _words(text: str) -> list[str]:
+    return [w for w in re.split(r"[^\w']+", TAG_RE.sub(" ", text).lower()) if w]
+
+
+def loop_reasons(text: str, duration: float | None = None) -> list[str]:
+    """Why a text looks like a Whisper loop (empty list = nothing suspicious)."""
+    text = (text or "").strip()
+    out = []
+    raw = text.encode("utf-8")
+    if len(raw) >= 40:
+        ratio = len(raw) / len(zlib.compress(raw))
+        if ratio > COMPRESSION_THRESHOLD:
+            out.append(f"texte très répétitif (taux de compression {ratio:.1f} > {COMPRESSION_THRESHOLD})")
+    words = _words(text)
+    best = None  # (repetitions, n-gram)
+    for n in range(1, 9):
+        for i in range(len(words) - n):
+            gram, reps = words[i:i + n], 1
+            while words[i + reps * n:i + (reps + 1) * n] == gram:
+                reps += 1
+            if reps >= (4 if n == 1 else 3) and (best is None or reps * n > best[0] * len(best[1])):
+                best = (reps, gram)
+    if best:
+        out.append(f"« {' '.join(best[1])} » répété {best[0]} fois de suite")
+    sentences = [" ".join(_words(s)) for s in re.split(r"[.?!]+", text)]
+    repeated = {s for s in sentences if len(s.split()) >= 4 and sentences.count(s) >= 2}
+    if repeated and not best:
+        s = next(iter(repeated))
+        out.append(f"phrase répétée : « {s[:60]}{'…' if len(s) > 60 else ''} »")
+    if duration and duration >= 1 and len(words) / duration > MAX_WORDS_PER_SECOND:
+        out.append(f"{len(words)} mots pour {duration:.1f} s : trop de texte pour la durée")
     return out
 
 

@@ -373,6 +373,17 @@ def api_projects():
     return jsonify({"projects": out, "root": str(DATA_ROOT)})
 
 
+def task_loop(task: dict, preds: list[dict] | None = None) -> dict | None:
+    """First automatic draft that looks like a Whisper loop, and why (rule 7.4)."""
+    d = task.get("data", {})
+    duration = (d.get("end") or 0) - (d.get("start") or 0) if d.get("end") is not None else None
+    for p in preds if preds is not None else all_predictions(task):
+        reasons = convention.loop_reasons(p["text"], duration)
+        if reasons:
+            return {"model": p["model"], "reasons": reasons}
+    return None
+
+
 @app.route("/api/projects/<name>/tasks")
 def api_tasks(name: str):
     project = get_project(name)
@@ -400,6 +411,7 @@ def api_tasks(name: str):
             "meta": (anno or {}).get("meta"),
             "convention": (anno or {}).get("convention"),
             "split_of": d.get("split_of"),
+            "loop": task_loop(t, preds),
         })
     return jsonify({"project": name, "tasks": out, "count": len(out)})
 
@@ -443,6 +455,7 @@ def api_dashboard():
     total_review = 0
     total_autosave = 0
     total_excluded = 0
+    total_loops = 0
     for p in discover_projects():
         tasks = load_tasks(p)
         annos = load_annotations(p)
@@ -450,6 +463,10 @@ def api_dashboard():
         review = sum(1 for a in annos.values() if a.get("status") == "review")
         autosave = sum(1 for a in annos.values() if a.get("status") == "autosave")
         excluded = sum(1 for a in annos.values() if a.get("status") == "excluded")
+        # Likely Whisper loops not yet validated: to review first (rule 7.4).
+        loops = sum(1 for t in tasks if (annos.get(task_audio(t)) or {}).get("status") not in ("done", "excluded")
+                    and task_loop(t))
+        total_loops += loops
         pending = len(tasks) - done - review - autosave - excluded
         total_tasks += len(tasks)
         total_done += done
@@ -467,6 +484,7 @@ def api_dashboard():
             "review": review,
             "autosave": autosave,
             "excluded": excluded,
+            "loops": loops,
             "completion": round(completion, 1),
         })
     overall_completion = ((total_done + total_excluded) / total_tasks * 100) if total_tasks else 0
@@ -479,6 +497,7 @@ def api_dashboard():
             "review": total_review,
             "autosave": total_autosave,
             "excluded": total_excluded,
+            "loops": total_loops,
             "completion": round(overall_completion, 1),
         },
         "projects": projects,

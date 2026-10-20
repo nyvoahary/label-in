@@ -102,6 +102,11 @@
   .conv-errors:empty { display: none; }
   .actions .save.excl { background: var(--muted); border-color: var(--muted); }
 
+  .loopmark { margin-left: auto; margin-right: 8px; font-size: 10px; font-weight: 600; color: #f97316;
+    border: 1px solid rgba(249,115,22,.45); border-radius: 8px; padding: 0 6px; }
+  .loop-alert { font-size: 12px; line-height: 1.5; color: var(--text); background: rgba(249,115,22,.08);
+    border: 1px solid rgba(249,115,22,.45); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+  .loop-alert a { color: var(--accent); }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0 0 0 6px; text-decoration: underline; }
 
   /* Tag bar and live checks */
@@ -251,6 +256,7 @@
       <button data-filter="done">Done</button>
       <button data-filter="review">Review <span id="reviewCount"></span></button>
       <button data-filter="excluded">Exclus</button>
+      <button data-filter="loops" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés : à relire en priorité (règle 7.4)">↻ <span id="loopCount"></span></button>
     </div>
     <div id="taskList" class="task-list"></div>
   </aside>
@@ -535,6 +541,7 @@ function renderSidebar() {
     <div class="task-item ${t.index === state.current ? "active" : ""}" data-idx="${t.index}">
       <div class="row1">
         <span class="idx">#${String(t.index).padStart(4,"0")}</span>
+        ${isLoopToReview(t) ? `<span class="loopmark" title="Boucle probable : ${escapeHtml(t.loop.reasons.join(" ; "))}">↻ boucle</span>` : ""}
         <span class="badge ${t.status}"></span>
       </div>
       <div class="preview">${escapeHtml(t.annotation || t.prediction || "(no text)")}</div>
@@ -556,6 +563,8 @@ function renderSidebar() {
   const reviewCount = state.tasks.filter(t => t.status === "review" || t.status === "autosave").length;
   const rc = document.getElementById("reviewCount");
   if (rc) rc.textContent = reviewCount ? `(${reviewCount})` : "";
+  const lc = document.getElementById("loopCount");
+  if (lc) lc.textContent = state.tasks.filter(isLoopToReview).length;
 }
 
 // Destroys the current WaveSurfer instance and clears all related state.
@@ -700,6 +709,9 @@ function select(idx) {
   const conf = t.confidence != null ? t.confidence.toFixed(3) : "—";
   const audioUrl = `/audio/${encodeURIComponent(state.project)}/${encodeURIComponent(t.audio)}`;
   document.getElementById("content").innerHTML = `
+    ${t.loop ? `<div class="loop-alert">↻ <b>Boucle Whisper probable</b> dans le brouillon ${escapeHtml(t.loop.model)} :
+      ${escapeHtml(t.loop.reasons.join(" ; "))}. Réécouter et ne garder que ce qui est réellement dit
+      (<a href="/documentation#regle-7-4" target="labelin-convention">règle 7.4</a>).</div>` : ""}
     <div class="meta-row">
       <span><b>${escapeHtml(t.audio)}</b></span>
       ${t.split_of ? `<span title="Découpé depuis ${escapeHtml(t.split_of)}">✂ partie d'une découpe
@@ -1469,8 +1481,14 @@ function getFilteredTasks() {
     state.filter === "pending" ? t.status === "pending" :
     state.filter === "review" ? (t.status === "review" || t.status === "autosave") :
     state.filter === "excluded" ? t.status === "excluded" :
+    state.filter === "loops" ? isLoopToReview(t) :
     true
   );
+}
+
+// A likely Whisper loop that nobody has validated or excluded yet.
+function isLoopToReview(t) {
+  return !!t.loop && t.status !== "done" && t.status !== "excluded";
 }
 
 // Returns the task index that follows the current one within the filtered list, or -1 if at the end.

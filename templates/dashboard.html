@@ -269,6 +269,7 @@ function render() {
       <div class="stat-card review"><div class="value">${o.review}</div><div class="label">Review</div></div>
       <div class="stat-card autosave"><div class="value">${o.autosave}</div><div class="label">Auto-saved</div></div>
       ${o.excluded ? `<div class="stat-card"><div class="value">${o.excluded}</div><div class="label">Excluded</div></div>` : ""}
+      ${o.loops ? `<div class="stat-card" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés (règle 7.4)"><div class="value" style="color:#f97316">${o.loops}</div><div class="label">↻ Boucles à relire</div></div>` : ""}
     </div>
 
     <div class="overall-bar">
@@ -365,6 +366,7 @@ function renderLocalCard(p, onNas) {
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${pct >= 100 ? "var(--done)" : "var(--accent)"}"></div></div>
         <span class="pct ${pctColor}">${pct}%</span>
       </div>
+      ${p.loops ? `<div style="font-size:12px;color:#f97316;margin-top:8px" title="À relire en priorité : filtre ↻ dans l'éditeur">↻ ${p.loops} boucle${p.loops > 1 ? "s" : ""} Whisper probable${p.loops > 1 ? "s" : ""} à relire</div>` : ""}
       <div class="card-divider"></div>
       <div class="card-actions">
         <span class="lbl">Download</span>
