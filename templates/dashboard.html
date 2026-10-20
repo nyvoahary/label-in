@@ -267,6 +267,7 @@ function render() {
       <div class="stat-card pending"><div class="value">${o.pending}</div><div class="label">Pending</div></div>
       <div class="stat-card review"><div class="value">${o.review}</div><div class="label">Review</div></div>
       <div class="stat-card autosave"><div class="value">${o.autosave}</div><div class="label">Auto-saved</div></div>
+      ${o.excluded ? `<div class="stat-card"><div class="value">${o.excluded}</div><div class="label">Excluded</div></div>` : ""}
     </div>
 
     <div class="overall-bar">

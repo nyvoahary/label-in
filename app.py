@@ -33,6 +33,7 @@ from flask import (Flask, Response, abort, g, jsonify, redirect, render_template
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import accounts
+import convention
 
 ROOT = Path(__file__).parent.resolve()
 if len(sys.argv) > 1:
@@ -394,8 +395,23 @@ def api_tasks(name: str):
             "status": (anno or {}).get("status", "pending"),
             "updated_at": (anno or {}).get("updated_at"),
             "updated_by": (anno or {}).get("updated_by"),
+            "meta": (anno or {}).get("meta"),
+            "convention": (anno or {}).get("convention"),
         })
     return jsonify({"project": name, "tasks": out, "count": len(out)})
+
+
+@app.route("/api/projects/<name>/convention")
+def api_convention(name: str):
+    """Allowed field values, plus the speakers and dialects already used in this project."""
+    used = {"speaker": set(), "dialect": set()}
+    for a in load_annotations(get_project(name)).values():
+        for key in used:
+            value = ((a or {}).get("meta") or {}).get(key)
+            if value:
+                used[key].add(value)
+    return jsonify({**convention.options(),
+                    "used_speakers": sorted(used["speaker"]), "used_dialects": sorted(used["dialect"])})
 
 
 @app.route("/dashboard")
@@ -411,19 +427,23 @@ def api_dashboard():
     total_pending = 0
     total_review = 0
     total_autosave = 0
+    total_excluded = 0
     for p in discover_projects():
         tasks = load_tasks(p)
         annos = load_annotations(p)
         done = sum(1 for a in annos.values() if a.get("status") == "done")
         review = sum(1 for a in annos.values() if a.get("status") == "review")
         autosave = sum(1 for a in annos.values() if a.get("status") == "autosave")
-        pending = len(tasks) - done - review - autosave
+        excluded = sum(1 for a in annos.values() if a.get("status") == "excluded")
+        pending = len(tasks) - done - review - autosave - excluded
         total_tasks += len(tasks)
         total_done += done
         total_review += review
         total_autosave += autosave
+        total_excluded += excluded
         total_pending += pending
-        completion = (done / len(tasks) * 100) if tasks else 0
+        # Excluded segments are finished work too.
+        completion = ((done + excluded) / len(tasks) * 100) if tasks else 0
         projects.append({
             "name": p["name"],
             "total": len(tasks),
@@ -431,9 +451,10 @@ def api_dashboard():
             "pending": pending,
             "review": review,
             "autosave": autosave,
+            "excluded": excluded,
             "completion": round(completion, 1),
         })
-    overall_completion = (total_done / total_tasks * 100) if total_tasks else 0
+    overall_completion = ((total_done + total_excluded) / total_tasks * 100) if total_tasks else 0
     return jsonify({
         "overall": {
             "projects": len(projects),
@@ -442,6 +463,7 @@ def api_dashboard():
             "pending": total_pending,
             "review": total_review,
             "autosave": total_autosave,
+            "excluded": total_excluded,
             "completion": round(overall_completion, 1),
         },
         "projects": projects,
@@ -457,19 +479,30 @@ def api_save(name: str, idx: int):
     payload = request.get_json(force=True) or {}
     text = (payload.get("text") or "").strip()
     status = payload.get("status")
-    if status not in ("done", "pending", "review", "autosave"):
+    if status not in ("done", "pending", "review", "autosave", "excluded"):
         status = "done" if text else "pending"
+    # Editors that know the convention send `meta`; without it the stored fields are kept.
+    meta = convention.clean_meta(payload["meta"]) if "meta" in payload else None
 
     audio = task_audio(tasks[idx])
     with annotations_lock:
-        return _save_one(project, idx, audio, text, status)
+        return _save_one(project, idx, audio, text, status, meta)
 
 
-def _save_one(project: dict, idx: int, audio: str, text: str, status: str):
+def _save_one(project: dict, idx: int, audio: str, text: str, status: str, meta: dict | None):
     annos = load_annotations(project)
     existing = annos.get(audio, {})
-    if status == "autosave" and existing.get("status") in ("done", "review"):
+    if meta is None and "meta" in existing:
+        meta = existing["meta"]
+    if status == "autosave" and existing.get("status") in ("done", "review", "excluded"):
         status = existing["status"]
+        # An edit that breaks a finished segment sends it back to the "to check" pile.
+        if meta is not None and convention.problems(status, text, meta):
+            status = "autosave"
+    elif meta is not None:
+        errors = convention.problems(status, text, meta)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
 
     annos[audio] = {
         "index": idx,
@@ -478,6 +511,15 @@ def _save_one(project: dict, idx: int, audio: str, text: str, status: str):
         "status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if meta is not None:
+        if status != "excluded":
+            meta.pop("exclude_reason", None)
+        annos[audio]["meta"] = meta
+    # The version a segment was validated under; drafts keep the previous one.
+    if meta is not None and status in ("done", "excluded") and not convention.problems(status, text, meta):
+        annos[audio]["convention"] = convention.VERSION
+    elif existing.get("convention"):
+        annos[audio]["convention"] = existing["convention"]
     if current_user():
         annos[audio]["updated_by"] = current_user()
     save_annotations(project, annos)
@@ -505,6 +547,9 @@ def api_export(name: str):
                     "value": {"text": [anno["text"]]},
                 }],
             }]
+        if anno and (anno.get("meta") or anno.get("status") == "excluded"):
+            merged["prova_mg"] = {"status": anno.get("status"), "convention": anno.get("convention"),
+                                  **(anno.get("meta") or {})}
         out.append(merged)
     return jsonify(out)
 
