@@ -282,7 +282,8 @@ def find_tasks_file(folder: Path) -> Path | None:
     ls = next(folder.glob("*.label_studio.json"), None)
     if ls is None:
         # fall back to any .json so users with other names still work
-        others = sorted(p for p in folder.glob("*.json") if p.name not in ("annotations.json", "learned_words.json"))
+        others = sorted(p for p in folder.glob("*.json")
+                        if p.name not in ("annotations.json", "learned_words.json", "assignments.json"))
         ls = others[0] if others else None
     return ls
 
@@ -355,19 +356,65 @@ def labeling():
     return render_template("index.html", root=DATA_ROOT.name)
 
 
+# --- Assignments -----------------------------------------------------------------------------
+# <project>/assignments.json maps a segment's audio file to the accounts assigned to it,
+# {"clip.wav": ["rivo"]} (a list, so double transcription can use it later). Admins see and
+# edit everything; other accounts only see, play and save the segments assigned to them.
+
+ASSIGN_FILE = "assignments.json"
+
+
+def load_assignments(project: dict) -> dict[str, list[str]]:
+    path = project["dir"] / ASSIGN_FILE
+    return json.loads(path.read_text("utf-8")) if path.exists() else {}
+
+
+def save_assignments(project: dict, data: dict[str, list[str]]) -> None:
+    _write_json(project["dir"] / ASSIGN_FILE, {k: v for k, v in data.items() if v})
+
+
+def visible_tasks(project: dict, tasks: list[dict] | None = None) -> list[tuple[int, dict]]:
+    """(index, task) pairs the current account may work on."""
+    tasks = load_tasks(project) if tasks is None else tasks
+    if is_admin():
+        return list(enumerate(tasks))
+    me, assigned = current_user(), load_assignments(project)
+    return [(i, t) for i, t in enumerate(tasks) if me in assigned.get(task_audio(t), [])]
+
+
+def require_segment(project: dict, audio: str) -> None:
+    # 404 rather than 403: a segment that isn't yours doesn't exist for you.
+    if not is_admin() and current_user() not in load_assignments(project).get(audio, []):
+        abort(404)
+
+
+def require_project(project: dict) -> None:
+    if not is_admin() and not visible_tasks(project):
+        abort(404)
+
+
+def segment_counts(tasks: list[dict], annos: dict) -> dict:
+    statuses = [(annos.get(task_audio(t)) or {}).get("status", "pending") for t in tasks]
+    counts = {s: statuses.count(s) for s in ("done", "review", "autosave", "excluded")}
+    counts["pending"] = len(tasks) - sum(counts.values())
+    # Likely Whisper loops not yet validated: to review first (rule 7.4).
+    counts["loops"] = sum(1 for t, s in zip(tasks, statuses) if s not in ("done", "excluded") and task_loop(t))
+    return counts
+
+
 @app.route("/api/projects")
 def api_projects():
     out = []
     for p in discover_projects():
-        tasks = load_tasks(p)
-        annos = load_annotations(p)
-        done = sum(1 for a in annos.values() if a.get("status") == "done")
-        review = sum(1 for a in annos.values() if a.get("status") in ("review", "autosave"))
+        mine = [t for _, t in visible_tasks(p)]
+        if not mine and not is_admin():
+            continue
+        c = segment_counts(mine, load_annotations(p))
         out.append({
             "name": p["name"],
-            "total": len(tasks),
-            "done": done,
-            "review": review,
+            "total": len(mine),
+            "done": c["done"],
+            "review": c["review"] + c["autosave"],
             "tasks_file": p["tasks_file"].name,
         })
     return jsonify({"projects": out, "root": str(DATA_ROOT)})
@@ -387,10 +434,11 @@ def task_loop(task: dict, preds: list[dict] | None = None) -> dict | None:
 @app.route("/api/projects/<name>/tasks")
 def api_tasks(name: str):
     project = get_project(name)
-    tasks = load_tasks(project)
+    require_project(project)
     annos = load_annotations(project)
+    assigned = load_assignments(project)
     out = []
-    for i, t in enumerate(tasks):
+    for i, t in visible_tasks(project):
         d = t.get("data", {})
         audio = d.get("audio", "")
         anno = annos.get(audio)
@@ -412,8 +460,9 @@ def api_tasks(name: str):
             "convention": (anno or {}).get("convention"),
             "split_of": d.get("split_of"),
             "loop": task_loop(t, preds),
+            "assignees": assigned.get(audio, []),
         })
-    return jsonify({"project": name, "tasks": out, "count": len(out)})
+    return jsonify({"project": name, "tasks": out, "count": len(out), "total": len(load_tasks(project))})
 
 
 @app.route("/documentation")
@@ -432,7 +481,9 @@ def convention_doc():
 def api_convention(name: str):
     """Allowed field values, plus the speakers and dialects already used in this project."""
     used = {"speaker": set(), "dialect": set()}
-    for a in load_annotations(get_project(name)).values():
+    project = get_project(name)
+    require_project(project)
+    for a in load_annotations(project).values():
         for key in used:
             value = ((a or {}).get("meta") or {}).get(key)
             if value:
@@ -448,58 +499,23 @@ def dashboard():
 
 @app.route("/api/dashboard")
 def api_dashboard():
+    # Non-admins see only their assigned segments, and only projects where they have some.
     projects = []
-    total_tasks = 0
-    total_done = 0
-    total_pending = 0
-    total_review = 0
-    total_autosave = 0
-    total_excluded = 0
-    total_loops = 0
+    totals = dict.fromkeys(("tasks", "done", "pending", "review", "autosave", "excluded", "loops"), 0)
     for p in discover_projects():
-        tasks = load_tasks(p)
-        annos = load_annotations(p)
-        done = sum(1 for a in annos.values() if a.get("status") == "done")
-        review = sum(1 for a in annos.values() if a.get("status") == "review")
-        autosave = sum(1 for a in annos.values() if a.get("status") == "autosave")
-        excluded = sum(1 for a in annos.values() if a.get("status") == "excluded")
-        # Likely Whisper loops not yet validated: to review first (rule 7.4).
-        loops = sum(1 for t in tasks if (annos.get(task_audio(t)) or {}).get("status") not in ("done", "excluded")
-                    and task_loop(t))
-        total_loops += loops
-        pending = len(tasks) - done - review - autosave - excluded
-        total_tasks += len(tasks)
-        total_done += done
-        total_review += review
-        total_autosave += autosave
-        total_excluded += excluded
-        total_pending += pending
+        mine = [t for _, t in visible_tasks(p)]
+        if not mine and not is_admin():
+            continue
+        c = segment_counts(mine, load_annotations(p))
+        totals["tasks"] += len(mine)
+        for k in ("done", "pending", "review", "autosave", "excluded", "loops"):
+            totals[k] += c[k]
         # Excluded segments are finished work too.
-        completion = ((done + excluded) / len(tasks) * 100) if tasks else 0
-        projects.append({
-            "name": p["name"],
-            "total": len(tasks),
-            "done": done,
-            "pending": pending,
-            "review": review,
-            "autosave": autosave,
-            "excluded": excluded,
-            "loops": loops,
-            "completion": round(completion, 1),
-        })
-    overall_completion = ((total_done + total_excluded) / total_tasks * 100) if total_tasks else 0
+        completion = ((c["done"] + c["excluded"]) / len(mine) * 100) if mine else 0
+        projects.append({"name": p["name"], "total": len(mine), **c, "completion": round(completion, 1)})
+    overall = ((totals["done"] + totals["excluded"]) / totals["tasks"] * 100) if totals["tasks"] else 0
     return jsonify({
-        "overall": {
-            "projects": len(projects),
-            "tasks": total_tasks,
-            "done": total_done,
-            "pending": total_pending,
-            "review": total_review,
-            "autosave": total_autosave,
-            "excluded": total_excluded,
-            "loops": total_loops,
-            "completion": round(overall_completion, 1),
-        },
+        "overall": {"projects": len(projects), **totals, "completion": round(overall, 1)},
         "projects": projects,
     })
 
@@ -519,6 +535,7 @@ def api_save(name: str, idx: int):
     meta = convention.clean_meta(payload["meta"]) if "meta" in payload else None
 
     audio = task_audio(tasks[idx])
+    require_segment(project, audio)
     if payload.get("audio") and payload["audio"] != audio:
         # The segment list changed under this editor (e.g. someone split a segment).
         return jsonify({"ok": False, "stale": True,
@@ -611,6 +628,7 @@ def api_split(name: str, idx: int):
             abort(404)
         task = tasks[idx]
         audio = task_audio(task)
+        require_segment(project, audio)
         if body.get("audio") != audio:
             return jsonify({"error": "La liste des segments a changé. Rechargez la page.", "stale": True}), 409
         src = project["dir"] / audio
@@ -675,6 +693,12 @@ def api_split(name: str, idx: int):
         _write_json(split_dir / "splits.json", log)
         _write_json(project["tasks_file"], tasks)
         save_annotations(project, annos)
+        # Both parts stay with whoever had the original segment.
+        assigned = load_assignments(project)
+        owners = assigned.pop(audio, None)
+        if owners:
+            assigned[part_a], assigned[part_b] = list(owners), list(owners)
+            save_assignments(project, assigned)
     return jsonify({"ok": True, "parts": [part_a, part_b], "index": idx})
 
 
@@ -682,6 +706,7 @@ def api_split(name: str, idx: int):
 def api_unsplit(name: str, part: str):
     """Undo the split that produced `part`: the two parts become the original segment again."""
     project = get_project(name)
+    require_segment(project, part)
     with annotations_lock:
         log = _split_log(project)
         entry = next((e for e in log if part in e["parts"]), None)
@@ -707,15 +732,23 @@ def api_unsplit(name: str, part: str):
         _write_json(_split_dir(project) / "splits.json", log)
         _write_json(project["tasks_file"], tasks)
         save_annotations(project, annos)
+        assigned = load_assignments(project)
+        owners = assigned.pop(a, None)
+        assigned.pop(b, None)
+        if owners:
+            assigned[entry["audio"]] = owners
+            save_assignments(project, assigned)
     return jsonify({"ok": True, "index": pos, "audio": entry["audio"]})
 
 
 @app.route("/api/projects/<name>/tasks/<int:idx>/check", methods=["POST"])
 def api_check(name: str, idx: int):
     """Live convention check while typing: blocking errors and warnings about the text."""
-    tasks = load_tasks(get_project(name))
+    project = get_project(name)
+    tasks = load_tasks(project)
     if idx < 0 or idx >= len(tasks):
         abort(404)
+    require_segment(project, task_audio(tasks[idx]))
     payload = request.get_json(force=True) or {}
     text = (payload.get("text") or "").strip()
     meta = convention.clean_meta(payload.get("meta"))
@@ -727,6 +760,7 @@ def api_check(name: str, idx: int):
 
 
 @app.route("/api/projects/<name>/export")
+@admin_required
 def api_export(name: str):
     project = get_project(name)
     tasks = load_tasks(project)
@@ -1070,6 +1104,7 @@ def api_upload_finish(name: str):
 # --- Download a project as a zip -----------------------------------------------
 
 @app.route("/api/projects/<name>/download")
+@admin_required
 def api_download(name: str):
     """?audio=1 → full project folder; otherwise annotations + tasks file only."""
     project = get_project(name)
@@ -1327,6 +1362,147 @@ def api_admin_trash_empty():
     return jsonify({"ok": True, "removed": removed})
 
 
+# --- Assignment page (admin) and "take more" (everyone) ---------------------------------------
+# Segment numbers are the ones shown in the editor's list: #0 is the first segment.
+
+TAKE_MAX = 200
+
+
+def _ranges(indices: list[int]) -> str:
+    """[0,1,2,5] -> "#0–#2, #5"."""
+    out, start = [], None
+    for n, i in enumerate(indices):
+        if start is None:
+            start = i
+        if n + 1 == len(indices) or indices[n + 1] != i + 1:
+            out.append(f"#{start}" if start == i else f"#{start}–#{i}")
+            start = None
+    return ", ".join(out)
+
+
+def _todo(anno: dict | None) -> bool:
+    return (anno or {}).get("status") not in ("done", "excluded")
+
+
+def _assignment_summary(project: dict) -> dict:
+    tasks, annos, assigned = load_tasks(project), load_annotations(project), load_assignments(project)
+    accounts_ = set(_auth_users())
+    per: dict[str, dict] = {}
+    unassigned = []
+    for i, t in enumerate(tasks):
+        audio = task_audio(t)
+        owners = assigned.get(audio, [])
+        if not owners:
+            unassigned.append(i)
+        for u in owners:
+            s = per.setdefault(u, {"user": u, "indices": [], "done": 0, "excluded": 0})
+            s["indices"].append(i)
+            status = (annos.get(audio) or {}).get("status")
+            if status in ("done", "excluded"):
+                s[status] += 1
+    users = []
+    for u in sorted(set(per) | accounts_):
+        s = per.get(u, {"user": u, "indices": [], "done": 0, "excluded": 0})
+        users.append({"user": u, "assigned": len(s["indices"]), "done": s["done"], "excluded": s["excluded"],
+                      "remaining": len(s["indices"]) - s["done"] - s["excluded"], "ranges": _ranges(s["indices"]),
+                      "account": u in accounts_})
+    todo = sum(1 for i in unassigned if _todo(annos.get(task_audio(tasks[i]))))
+    return {"project": project["name"], "total": len(tasks), "users": users,
+            "unassigned": {"count": len(unassigned), "todo": todo, "ranges": _ranges(unassigned)}}
+
+
+@app.route("/api/admin/assignments/<name>")
+@admin_required
+def api_admin_assignments(name: str):
+    return jsonify(_assignment_summary(get_project(name)))
+
+
+@app.route("/api/admin/assignments/<name>", methods=["POST"])
+@admin_required
+def api_admin_assign(name: str):
+    """Body: {action: assign|unassign|history, user, mode: range|next, from, to, count}."""
+    project = get_project(name)
+    body = request.get_json(force=True) or {}
+    action, user = body.get("action"), body.get("user")
+    if action == "assign" and user not in _auth_users():
+        return jsonify({"error": "Choisir un compte existant."}), 400
+    with annotations_lock:
+        tasks, annos, assigned = load_tasks(project), load_annotations(project), load_assignments(project)
+        audios = [task_audio(t) for t in tasks]
+        if action == "history":
+            # Each unassigned segment goes to the account that last edited it, if it still exists.
+            accounts_, changed = set(_auth_users()), 0
+            for audio in audios:
+                who = (annos.get(audio) or {}).get("updated_by")
+                if who in accounts_ and not assigned.get(audio):
+                    assigned[audio] = [who]
+                    changed += 1
+        elif action in ("assign", "unassign"):
+            if body.get("mode") == "next":
+                try:
+                    count = int(body.get("count"))
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Nombre de segments invalide."}), 400
+                targets = [a for a in audios if not assigned.get(a) and _todo(annos.get(a))][:max(0, count)]
+            else:
+                try:
+                    lo, hi = int(body.get("from")), int(body.get("to"))
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Indiquer une plage, ex. de #0 à #199."}), 400
+                if not 0 <= lo <= hi < len(audios):
+                    return jsonify({"error": f"Plage hors du projet : de #0 à #{len(audios) - 1}."}), 400
+                targets = audios[lo:hi + 1]
+            for audio in targets:
+                if action == "assign":
+                    assigned[audio] = [user]
+                else:
+                    assigned.pop(audio, None)
+            changed = len(targets)
+        else:
+            return jsonify({"error": f"Action inconnue : {action}"}), 400
+        save_assignments(project, assigned)
+    return jsonify({"ok": True, "changed": changed, **_assignment_summary(project)})
+
+
+@app.route("/api/available")
+def api_available():
+    """Projects with unassigned work left, for the "take more" button."""
+    out = []
+    for p in discover_projects():
+        annos, assigned = load_annotations(p), load_assignments(p)
+        n = sum(1 for t in load_tasks(p) if not assigned.get(task_audio(t)) and _todo(annos.get(task_audio(t))))
+        if n:
+            out.append({"name": p["name"], "available": n})
+    return jsonify({"projects": out, "take": 50})
+
+
+@app.route("/api/projects/<name>/take", methods=["POST"])
+def api_take(name: str):
+    """Assign the next unassigned segments still to do to the current account (default 50)."""
+    project = get_project(name)
+    me = current_user()
+    if not me:
+        return jsonify({"error": "La connexion n'est pas activée."}), 400
+    try:
+        count = min(TAKE_MAX, max(1, int((request.get_json(silent=True) or {}).get("count", 50))))
+    except (TypeError, ValueError):
+        count = 50
+    with annotations_lock:
+        tasks, annos, assigned = load_tasks(project), load_annotations(project), load_assignments(project)
+        taken = []
+        for i, t in enumerate(tasks):
+            audio = task_audio(t)
+            if not assigned.get(audio) and _todo(annos.get(audio)):
+                assigned[audio] = [me]
+                taken.append(i)
+                if len(taken) == count:
+                    break
+        if not taken:
+            return jsonify({"error": "Plus aucun segment disponible dans ce projet."}), 409
+        save_assignments(project, assigned)
+    return jsonify({"ok": True, "taken": len(taken), "ranges": _ranges(taken), "first": taken[0]})
+
+
 # Override with LEARNED_WORDS_FILE to keep the list on persistent storage (e.g. in Docker).
 LEARNED_WORDS_FILE = Path(os.environ.get("LEARNED_WORDS_FILE", ROOT / "static" / "learned_words.json"))
 
@@ -1352,6 +1528,7 @@ def add_learned_words():
 @app.route("/audio/<name>/<path:filename>")
 def serve_audio(name: str, filename: str):
     project = get_project(name)
+    require_segment(project, filename)
     return send_from_directory(str(project["dir"]), filename)
 
 

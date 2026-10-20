@@ -102,6 +102,17 @@
   .conv-errors:empty { display: none; }
   .actions .save.excl { background: var(--muted); border-color: var(--muted); }
 
+  .assignbar { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center;
+    font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .assignbar select { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  .assignbar button, .empty .take { background: var(--accent); border: 1px solid var(--accent); color: #fff;
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .assignbar .note { width: 100%; font-size: 11px; }
+  .task-item .assignee { margin-left: auto; margin-right: 8px; font-size: 10px; color: var(--muted); max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-item .assignee.none { font-style: italic; opacity: .7; }
+  .task-item .loopmark + .assignee { margin-left: 0; }
   .loopmark { margin-left: auto; margin-right: 8px; font-size: 10px; font-weight: 600; color: #f97316;
     border: 1px solid rgba(249,115,22,.45); border-radius: 8px; padding: 0 6px; }
   .loop-alert { font-size: 12px; line-height: 1.5; color: var(--text); background: rgba(249,115,22,.08);
@@ -258,6 +269,7 @@
       <button data-filter="excluded">Exclus</button>
       <button data-filter="loops" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés : à relire en priorité (règle 7.4)">↻ <span id="loopCount"></span></button>
     </div>
+    <div class="assignbar" id="assignBar" hidden></div>
     <div id="taskList" class="task-list"></div>
   </aside>
 
@@ -303,7 +315,9 @@ window.fetch = async (...args) => {
   if (r.status === 401) location.href = "/login?next=" + encodeURIComponent(location.pathname);
   return r;
 };
-fetch("/api/me").then(r => r.json()).then(me => {
+const meReady = fetch("/api/me").then(r => r.json()).then(me => {
+  state.role = me.role;
+  state.user = me.user;
   if (me.role === "admin") document.getElementById("adminLink").hidden = false;
   if (me.user) {
     document.getElementById("who").textContent = "👤 " + me.user;
@@ -418,10 +432,12 @@ function setupPredictionWords(container) {
 
 // Loads all available projects from the API and populates the project selector.
 async function fetchProjects() {
+  await meReady;
   const r = await fetch("/api/projects");
   const j = await r.json();
   state.projects = j.projects;
   const sel = document.getElementById("projectSelect");
+  if (!state.projects.length && state.user && state.role !== "admin") return showNothingAssigned();
   if (!state.projects.length) {
     document.getElementById("content").innerHTML =
       `<div class="empty">No projects found in <code>${j.root}</code>.<br>
@@ -515,16 +531,79 @@ async function doSync(name) {
   }
 }
 
+// state.tasks holds the segments this account can see (all of them for admins, the assigned
+// ones otherwise), so a segment's number (t.index) is not its position: look it up with taskAt.
+function setTasks(tasks) {
+  state.tasks = tasks;
+  state.byIndex = new Map(tasks.map(t => [t.index, t]));
+}
+function taskAt(idx) { return state.byIndex?.get(idx); }
+
+// --- Assignments ------------------------------------------------------------------------
+// Admins: "Assigné à" filter over every segment. Others: their segments, plus "take 50 more".
+async function renderAssignBar() {
+  const bar = document.getElementById("assignBar");
+  if (!bar || !state.user) return;
+  bar.hidden = false;
+  if (state.role === "admin") {
+    if (!state.accounts) {
+      try { state.accounts = (await fetch("/api/admin/users").then(r => r.json())).users.map(u => u.name); }
+      catch (e) { state.accounts = []; }
+    }
+    const names = [...new Set([...state.accounts, ...state.tasks.flatMap(t => t.assignees || [])])].sort();
+    const count = f => state.tasks.filter(t => f === "__none__" ? !(t.assignees || []).length : (t.assignees || []).includes(f)).length;
+    bar.innerHTML = `<span>Assigné à</span>
+      <select id="assignFilter">
+        <option value="">Tous (${state.tasks.length})</option>
+        <option value="__none__">Non assignés (${count("__none__")})</option>
+        ${names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)} (${count(n)})</option>`).join("")}
+      </select>`;
+    const sel = document.getElementById("assignFilter");
+    sel.value = state.assignFilter || "";
+    sel.onchange = () => { state.assignFilter = sel.value; renderSidebar(); };
+  } else {
+    const todo = state.tasks.filter(t => t.status !== "done" && t.status !== "excluded").length;
+    bar.innerHTML = `<button type="button" id="takeBtn">＋ Prendre 50 segments</button>
+      <span>${todo} à faire dans votre lot</span>`;
+    document.getElementById("takeBtn").onclick = () => takeMore(state.project);
+  }
+}
+
+async function takeMore(project) {
+  const r = await fetch(`/api/projects/${encodeURIComponent(project)}/take`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count: 50 }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(j.error || `Impossible de prendre des segments (HTTP ${r.status}).`); return; }
+  if (project !== state.project || !state.tasks.length) { localStorage.setItem(STORAGE_KEY, project); return fetchProjects(); }
+  await reloadTasks(j.first);
+}
+
+// An account with nothing assigned: offer the projects that still have free segments.
+async function showNothingAssigned() {
+  let avail = [];
+  try { avail = (await fetch("/api/available").then(r => r.json())).projects; } catch (e) {}
+  document.getElementById("projectSelect").innerHTML = "<option>(aucun)</option>";
+  document.getElementById("content").innerHTML = `<div class="empty">
+    <p>Aucun segment ne vous est assigné pour le moment.</p>
+    ${avail.length ? `<p>Segments disponibles :</p>` + avail.map(p => `<p><b>${escapeHtml(p.name)}</b> : ${p.available} disponibles
+      <button class="take" data-take="${escapeHtml(p.name)}">＋ Prendre 50 segments</button></p>`).join("")
+      : `<p>Il n'y a plus de segment libre : demandez à un admin de vous en assigner.</p>`}
+  </div>`;
+  document.querySelectorAll("[data-take]").forEach(b => b.onclick = () => takeMore(b.dataset.take));
+}
+
 // Fetches all tasks for the active project and opens the first pending task.
 async function fetchTasks() {
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks`);
   const j = await r.json();
-  state.tasks = j.tasks;
+  setTasks(j.tasks || []);
   state.current = null;
   try {
     state.conv = await fetch(`/api/projects/${encodeURIComponent(state.project)}/convention`).then(r => r.json());
   } catch (e) { state.conv = null; }
   renderSidebar();
+  renderAssignBar();
   if (state.tasks.length) {
     const firstPending = state.tasks.find(t => t.status !== "done" && t.status !== "excluded");
     select((firstPending || state.tasks[0]).index);
@@ -542,6 +621,7 @@ function renderSidebar() {
       <div class="row1">
         <span class="idx">#${String(t.index).padStart(4,"0")}</span>
         ${isLoopToReview(t) ? `<span class="loopmark" title="Boucle probable : ${escapeHtml(t.loop.reasons.join(" ; "))}">↻ boucle</span>` : ""}
+        ${state.role === "admin" ? `<span class="assignee ${(t.assignees || []).length ? "" : "none"}">${escapeHtml((t.assignees || []).join(", ") || "non assigné")}</span>` : ""}
         <span class="badge ${t.status}"></span>
       </div>
       <div class="preview">${escapeHtml(t.annotation || t.prediction || "(no text)")}</div>
@@ -701,10 +781,11 @@ function initWavesurfer(audioUrl) {
 // Renders the full task editor (waveform, predictions, annotation, controls) for the given task index.
 function select(idx) {
   state.current = idx;
-  const t = state.tasks[idx];
+  const t = taskAt(idx);
   if (!t) return;
   document.getElementById("metaIdx").textContent =
-    `${state.project} · Task ${idx + 1} / ${state.tasks.length}` + (t.updated_by ? ` · last edited by ${t.updated_by}` : "");
+    `${state.project} · #${idx} · ${state.tasks.indexOf(t) + 1} / ${state.tasks.length}`
+    + (t.updated_by ? ` · last edited by ${t.updated_by}` : "");
   const dur = t.duration ? t.duration.toFixed(2) + "s" : "—";
   const conf = t.confidence != null ? t.confidence.toFixed(3) : "—";
   const audioUrl = `/audio/${encodeURIComponent(state.project)}/${encodeURIComponent(t.audio)}`;
@@ -1080,7 +1161,7 @@ function prepareMeta(t) {
   const meta = { ...own, flags: [...(own.flags || [])] };
   state.unconfirmed = new Set();
   for (let i = t.index - 1; i >= 0 && CARRIED.some(k => !meta[k]); i--) {
-    const prev = state.tasks[i].meta;
+    const prev = taskAt(i)?.meta;
     if (!prev) continue;
     for (const k of CARRIED) {
       if (!meta[k] && prev[k]) {
@@ -1219,13 +1300,18 @@ function wireConventionPanel() {
 // The audio is cut at the playback position; the text is shared out at the text cursor.
 async function reloadTasks(selectIdx) {
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks`);
-  state.tasks = (await r.json()).tasks;
+  setTasks((await r.json()).tasks || []);
   renderSidebar();
-  if (state.tasks.length) select(Math.min(Math.max(selectIdx, 0), state.tasks.length - 1));
+  renderAssignBar();
+  // The same segment number if it is still visible, otherwise the closest one.
+  if (state.tasks.length) {
+    const near = state.tasks.reduce((a, b) => Math.abs(b.index - selectIdx) < Math.abs(a.index - selectIdx) ? b : a);
+    select(near.index);
+  }
 }
 
 async function splitSegment(idx) {
-  const t = state.tasks[idx], ta = document.getElementById("annotation");
+  const t = taskAt(idx), ta = document.getElementById("annotation");
   if (!state.ws || !t || !ta) return;
   state.ws.pause();
   const at = state.ws.getCurrentTime(), dur = state.ws.getDuration();
@@ -1251,7 +1337,7 @@ async function splitSegment(idx) {
 }
 
 async function unsplitSegment(idx) {
-  const t = state.tasks[idx];
+  const t = taskAt(idx);
   if (!t || !confirm("Annuler la découpe ? Les deux parties redeviennent le segment d'origine, "
       + "avec la transcription qu'il avait avant la découpe. Le travail fait sur les deux parties sera perdu.")) return;
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/split/${encodeURIComponent(t.audio)}`, { method: "DELETE" });
@@ -1388,16 +1474,16 @@ async function autoSave() {
     const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, status, audio: state.tasks[idx].audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
+      body: JSON.stringify({ text, status, audio: taskAt(idx).audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
       signal: controller.signal,
     });
     const j = await r.json();
     if (j.ok) {
-      state.tasks[idx].annotation = text;
-      state.tasks[idx].status = j.annotation.status;
-      state.tasks[idx].updated_by = j.annotation.updated_by;
-      state.tasks[idx].meta = j.annotation.meta;
-      state.tasks[idx].convention = j.annotation.convention;
+      taskAt(idx).annotation = text;
+      taskAt(idx).status = j.annotation.status;
+      taskAt(idx).updated_by = j.annotation.updated_by;
+      taskAt(idx).meta = j.annotation.meta;
+      taskAt(idx).convention = j.annotation.convention;
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
       document.getElementById("saveStatus").classList.add("autosaved");
       renderSidebar();
@@ -1431,7 +1517,7 @@ async function save(advance, statusOverride) {
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, status, audio: state.tasks[idx].audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
+    body: JSON.stringify({ text, status, audio: taskAt(idx).audio, ...(state.conv ? { meta: confirmedMeta() } : {}) }),
   });
   const j = await r.json();
   if (j.stale) {
@@ -1447,11 +1533,11 @@ async function save(advance, statusOverride) {
     return;
   }
   if (j.ok) {
-    state.tasks[idx].annotation = text;
-    state.tasks[idx].status = status;
-    state.tasks[idx].updated_by = j.annotation.updated_by;
-    state.tasks[idx].meta = j.annotation.meta;
-    state.tasks[idx].convention = j.annotation.convention;
+    taskAt(idx).annotation = text;
+    taskAt(idx).status = status;
+    taskAt(idx).updated_by = j.annotation.updated_by;
+    taskAt(idx).meta = j.annotation.meta;
+    taskAt(idx).convention = j.annotation.convention;
     if (state.conv && j.annotation.meta) {
       const used = state.conv.used_speakers, sp = j.annotation.meta.speaker;
       if (sp && !used.includes(sp)) used.push(sp);
@@ -1483,6 +1569,11 @@ function getFilteredTasks() {
     state.filter === "excluded" ? t.status === "excluded" :
     state.filter === "loops" ? isLoopToReview(t) :
     true
+  ).filter(t =>
+    // Admins only: "Assigné à" filter.
+    !state.assignFilter ? true :
+    state.assignFilter === "__none__" ? !(t.assignees || []).length :
+    (t.assignees || []).includes(state.assignFilter)
   );
 }
 
@@ -1509,7 +1600,7 @@ function getPrevFilteredIndex(currentIdx) {
 
 // Navigates to the task at idx if it is within bounds.
 function goto(idx) {
-  if (idx < 0 || idx >= state.tasks.length) return;
+  if (!taskAt(idx)) return;
   select(idx);
 }
 
@@ -1536,7 +1627,7 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); save(true); return; }
   if (e.ctrlKey && (e.key === "d" || e.key === "D")) {
     e.preventDefault();
-    const cur = state.tasks[state.current];
+    const cur = taskAt(state.current);
     if (ta) ta.value = (cur?.predictions?.[0]?.text) || cur?.prediction || "";
     return;
   }

@@ -92,6 +92,7 @@
   <div class="tabs">
     <button data-tab="users">Users</button>
     <button data-tab="projects">Projects</button>
+    <button data-tab="assign">Assignation</button>
     <button data-tab="trash">Trash</button>
   </div>
   <div id="tab"></div>
@@ -400,8 +401,118 @@ async function loadTrash() {
   if (state.tab === "trash") renderTrash();
 }
 
+// --- Assignments ---------------------------------------------------------------------
+// Segment numbers are those of the editor's list (#0 = first segment).
+async function loadAssign() {
+  if (!state.projects.length) state.projects = (await api("GET", "/api/admin/projects")).projects;
+  if (!state.projects.length) { document.getElementById("tab").innerHTML = `<p class="muted">Aucun projet.</p>`; return; }
+  let name = state.assignProject;
+  try { name = name || localStorage.getItem("labelin.assignProject"); } catch (e) {}
+  if (!state.projects.some(p => p.name === name)) name = state.projects[0].name;
+  state.assignProject = name;
+  state.assign = await api("GET", `/api/admin/assignments/${encodeURIComponent(name)}`);
+  if (state.tab === "assign") renderAssign();
+}
+
+function renderAssign(msg = "", cls = "ok") {
+  const a = state.assign, last = a.total - 1;
+  const rows = a.users.filter(u => u.assigned || u.account).map(u => {
+    const finished = u.done + u.excluded, pct = u.assigned ? Math.round(finished / u.assigned * 100) : 0;
+    return `<tr>
+      <td><b>${esc(u.user)}</b>${u.account ? "" : ` <span class="tag" title="Ce compte n'existe plus : réassigner ses segments">compte supprimé</span>`}</td>
+      <td>${u.assigned}</td>
+      <td style="min-width:120px">${u.assigned ? `<div class="bar-track"><div class="bar-fill ${pct >= 100 ? "full" : ""}" style="width:${pct}%"></div></div>
+        <div class="people" style="margin-top:4px">${finished} terminés · ${u.remaining} restants</div>` : `<span class="muted">—</span>`}</td>
+      <td class="muted" style="font-size:12px">${esc(u.ranges) || "—"}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("tab").innerHTML = `
+    <div class="panel">
+      <h2>Assignation <span class="spacer"></span>
+        <select id="asProject">${state.projects.map(p => `<option ${p.name === a.project ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></h2>
+      <p class="hint">Les annotateurs ne voient que leurs segments. Les segments non assignés ne sont visibles que des admins.
+        Numéros comme dans la liste de l'éditeur : de #0 à #${last}.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Compte</th><th>Assignés</th><th>Avancement</th><th>Segments</th></tr></thead>
+        <tbody>${rows}
+          <tr><td><b>Non assignés</b></td><td>${a.unassigned.count}</td>
+            <td class="people">${a.unassigned.todo} encore à faire</td><td class="muted" style="font-size:12px">${esc(a.unassigned.ranges) || "—"}</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Assigner ou retirer</h2>
+      <div class="form-row" style="margin-bottom:10px">
+        <label class="muted" style="font-size:12px">Compte</label>
+        <select id="asUser">${a.users.filter(u => u.account).map(u => `<option>${esc(u.user)}</option>`).join("")}</select>
+      </div>
+      <div class="form-row" style="margin-bottom:8px">
+        <label><input type="radio" name="asMode" value="range" checked> Plage de #</label>
+        <input id="asFrom" type="number" min="0" max="${last}" value="0" style="width:90px"> à #
+        <input id="asTo" type="number" min="0" max="${last}" value="${Math.min(49, last)}" style="width:90px">
+        <button class="btn small" id="asAll" type="button">Tout le projet</button>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <label><input type="radio" name="asMode" value="next"> Les</label>
+        <input id="asCount" type="number" min="1" value="50" style="width:80px">
+        <span class="muted" style="font-size:12px">prochains segments non assignés et encore à faire</span>
+      </div>
+      <div class="form-row">
+        <button class="btn primary" id="asAssign">Assigner</button>
+        <button class="btn danger" id="asUnassign" title="La plage redevient non assignée. Le travail fait est conservé.">Retirer l'assignation</button>
+      </div>
+      <div class="msg ${cls}" id="asMsg">${esc(msg)}</div>
+    </div>
+    <div class="panel">
+      <h2>Reprendre l'historique</h2>
+      <p class="hint">Assigne chaque segment encore non assigné au compte qui l'a modifié en dernier. Utile une seule fois,
+        pour que chacun retrouve le travail déjà fait avant l'assignation.</p>
+      <button class="btn" id="asHistory">Assigner selon l'historique</button>
+    </div>`;
+
+  const mode = () => document.querySelector("input[name=asMode]:checked").value;
+  const run = async (body, confirmText) => {
+    if (confirmText && !confirm(confirmText)) return;
+    try {
+      const j = await api("POST", `/api/admin/assignments/${encodeURIComponent(a.project)}`, body);
+      state.assign = j;
+      renderAssign(`✓ ${j.changed} segment${j.changed > 1 ? "s" : ""} modifié${j.changed > 1 ? "s" : ""}.`);
+    } catch (err) { setMsg("asMsg", err.message, "error"); }
+  };
+  const target = () => mode() === "next"
+    ? { mode: "next", count: +document.getElementById("asCount").value }
+    : { mode: "range", from: +document.getElementById("asFrom").value, to: +document.getElementById("asTo").value };
+  document.getElementById("asProject").onchange = (e) => {
+    state.assignProject = e.target.value;
+    try { localStorage.setItem("labelin.assignProject", e.target.value); } catch (err) {}
+    loadAssign();
+  };
+  document.getElementById("asAll").onclick = () => {
+    document.getElementById("asFrom").value = 0;
+    document.getElementById("asTo").value = last;
+    document.querySelector("input[name=asMode][value=range]").checked = true;
+  };
+  ["asFrom", "asTo"].forEach(id => document.getElementById(id).onfocus = () =>
+    document.querySelector("input[name=asMode][value=range]").checked = true);
+  document.getElementById("asCount").onfocus = () => document.querySelector("input[name=asMode][value=next]").checked = true;
+  document.getElementById("asAssign").onclick = () => {
+    const t = target(), user = document.getElementById("asUser").value;
+    run({ action: "assign", user, ...t }, t.mode === "range"
+      ? `Assigner les segments #${t.from} à #${t.to} à ${user} ?\n\nCeux qui étaient assignés à quelqu'un d'autre dans cette plage lui seront retirés.`
+      : null);
+  };
+  document.getElementById("asUnassign").onclick = () => {
+    const t = target();
+    if (t.mode !== "range") return setMsg("asMsg", "Pour retirer une assignation, choisir une plage.", "error");
+    run({ action: "unassign", ...t },
+      `Retirer l'assignation des segments #${t.from} à #${t.to} ? Ils ne seront plus visibles que des admins. Le travail fait est conservé.`);
+  };
+  document.getElementById("asHistory").onclick = () =>
+    run({ action: "history" }, "Assigner chaque segment non assigné au dernier compte qui l'a modifié ?");
+}
+
 // --- Tabs --------------------------------------------------------------------------
-const loaders = { users: loadUsers, projects: loadProjects, trash: loadTrash };
+const loaders = { users: loadUsers, projects: loadProjects, trash: loadTrash, assign: loadAssign };
 function showTab(tab) {
   state.tab = tab;
   state.editing = null;
