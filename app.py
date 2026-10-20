@@ -548,8 +548,7 @@ def api_export(name: str):
                 }],
             }]
         if anno and (anno.get("meta") or anno.get("status") == "excluded"):
-            merged["prova_mg"] = {"status": anno.get("status"), "convention": anno.get("convention"),
-                                  **(anno.get("meta") or {})}
+            merged["prova_mg"] = convention.export_fields(anno)
         out.append(merged)
     return jsonify(out)
 

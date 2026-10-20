@@ -1,0 +1,76 @@
+<!-- PROVA-MG : configuration Label Studio, transcription malgache avec code-switching -->
+<!-- CONVENTION_VERSION : v1.3 -->
+<View>
+  <Header value="Écouter, découper en segments (un seul locuteur, 2 à 30 s), puis remplir les champs du segment."/>
+
+  <Audio name="audio" value="$audio" zoom="true" speed="true" hotkey="space"/>
+
+  <Labels name="region" toName="audio" choice="single">
+    <Label value="Parole" background="#4CAF50"/>
+    <Label value="Exclu" background="#9E9E9E"/>
+  </Labels>
+
+  <View visibleWhen="region-selected">
+
+    <Header value="Transcription (verbatim, voir convention)"/>
+    <TextArea name="transcription" toName="audio" perRegion="true"
+              editable="true" rows="3" maxSubmissions="1"
+              placeholder="Ex. : Tsy afaka ny réunion rahampitso aho [euh] fa misy rendez-vous chez le médecin"/>
+
+    <Header value="Langue du segment"/>
+    <Choices name="langue" toName="audio" perRegion="true" choice="single" required="true">
+      <Choice value="mg"/>
+      <Choice value="fr"/>
+      <Choice value="mixte"/>
+      <Choice value="autre"/>
+    </Choices>
+
+    <Header value="Variété dialectale"/>
+    <Choices name="dialecte" toName="audio" perRegion="true" choice="single" required="true">
+      <Choice value="officiel (merina standard)"/>
+      <Choice value="betsileo"/>
+      <Choice value="betsimisaraka"/>
+      <Choice value="sakalava"/>
+      <Choice value="antandroy"/>
+      <Choice value="antakarana"/>
+      <Choice value="autre / incertain"/>
+      <Choice value="plusieurs"/>
+    </Choices>
+
+    <Header value="Registre"/>
+    <Choices name="registre" toName="audio" perRegion="true" choice="single" required="true">
+      <Choice value="lu"/>
+      <Choice value="semi-préparé (discours, prêche)"/>
+      <Choice value="spontané"/>
+    </Choices>
+
+    <Header value="Qualité audio"/>
+    <Choices name="qualite" toName="audio" perRegion="true" choice="single" required="true">
+      <Choice value="propre"/>
+      <Choice value="bruit léger"/>
+      <Choice value="bruit fort"/>
+      <Choice value="musique de fond"/>
+    </Choices>
+
+    <Header value="Locuteur (identifiant dans la source, ex. S1, S2 ; S1+S2 si région inséparable)"/>
+    <TextArea name="locuteur" toName="audio" perRegion="true" rows="1" maxSubmissions="1"/>
+
+    <Header value="Indicateurs"/>
+    <Choices name="drapeaux" toName="audio" perRegion="true" choice="multiple">
+      <Choice value="chevauchement de voix"/>
+      <Choice value="transcription incertaine"/>
+      <Choice value="nom propre à vérifier"/>
+      <Choice value="emprunt ambigu (à ajouter au lexique)"/>
+      <Choice value="plusieurs locuteurs"/>
+    </Choices>
+
+    <Header value="Si Exclu : raison"/>
+    <Choices name="raison_exclusion" toName="audio" perRegion="true" choice="single">
+      <Choice value="inaudible"/>
+      <Choice value="chant / musique"/>
+      <Choice value="autre langue"/>
+      <Choice value="trop de chevauchement"/>
+    </Choices>
+
+  </View>
+</View>

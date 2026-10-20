@@ -1,6 +1,6 @@
 # Convention de transcription PROVA-MG
 
-**Version : CONVENTION_VERSION v1.2**
+**Version : CONVENTION_VERSION v1.3**
 Parole malgache, avec code-switching malgache-français.
 
 Ce guide s'adresse aux transcripteurs. Chaque règle est accompagnée d'exemples et de remarques. En cas de doute, cocher l'indicateur adapté plutôt que deviner.
@@ -294,6 +294,52 @@ Le locuteur reste `S2` dans les deux cas : c'est ce qui garde le lien avec la pe
 
 > **Remarque.** Ces cas sont précieux pour la thèse. Une même voix qui produit deux variétés permet au modèle de distinguer l'identité du locuteur et le dialecte, deux choses qui sont sinon toujours confondues.
 
+### 8.5 Plusieurs locuteurs dans un même segment
+
+**Principe : on ne mentionne jamais deux locuteurs dans le même segment. On les sépare.**
+
+#### Cas normal : séparable, donc deux régions
+
+Sur la forme d'onde, on trace **deux régions** au lieu d'une. Chaque région a ses propres champs.
+
+Audio : *"Ho avy ve ianao rahampitso?"* (S1) puis *"Eny, ho avy aho amin'ny maraina."* (S2)
+
+| Région | Transcription | Locuteur |
+|---|---|---|
+| 1 | `Ho avy ve ianao rahampitso?` | `S1` |
+| 2 | `Eny, ho avy aho amin'ny maraina.` | `S2` |
+
+Aucune mention du locuteur dans le texte : c'est le champ **Locuteur** qui porte l'information.
+
+#### Cas exceptionnel : inséparable, donc une région avec balises
+
+Échange très rapide, tours de moins d'une seconde :
+*"Ho avy ve ianao?" "Eny." "Rahoviana?" "Rahampitso."*
+
+Découper en quatre régions minuscules n'a pas de sens. On garde **une seule région** :
+
+| Champ | Valeur |
+|---|---|
+| Transcription | `[S1] Ho avy ve ianao? [S2] Eny. [S1] Rahoviana? [S2] Rahampitso.` |
+| Locuteur | `S1+S2` |
+| Dialecte | celui des deux s'il est identique, sinon `plusieurs` |
+| Indicateurs | `plusieurs locuteurs` |
+
+Règles d'écriture des balises :
+- Balise `[S1]`, `[S2]`... **avant chaque tour de parole**, y compris le premier.
+- Mêmes identifiants que dans le champ Locuteur des autres segments de la source.
+- Ordre chronologique. Si deux tours se superposent légèrement, celui qui commence en premier est écrit en premier.
+
+Si les voix se superposent au point d'être incompréhensibles : région *Exclu*, raison *trop de chevauchement*.
+
+| Situation | Action |
+|---|---|
+| Tours de plus de 2 s, pause entre eux | Deux régions (cas normal) |
+| Échange rapide, tours de moins d'une seconde, voix compréhensibles | Une région, balises `[S1]` `[S2]` |
+| Voix superposées et incompréhensibles | *Exclu* |
+
+> **Remarque.** Les balises `[S1]`, `[S2]` ne doivent jamais arriver dans les données d'entraînement : le modèle apprendrait à les écrire. Ces segments sont donc **exclus de l'entraînement par défaut** et gardés pour un test de robustesse multi-locuteurs. C'est pourquoi on n'utilise cette solution qu'en dernier recours.
+
 ---
 
 ## 9. Paramètres par segment
@@ -316,6 +362,7 @@ Le locuteur reste `S2` dans les deux cas : c'est ce qui garde le lien avec la pe
 | `officiel (merina standard)` | Présentateur de journal, lecture officielle |
 | Variété régionale | Mots ou formes dialectales (ex. `zaho` au Sud), intonation régionale |
 | `autre / incertain` | Aucun indice clair |
+| `plusieurs` | Segment à plusieurs locuteurs de dialectes différents (cas 8.5 uniquement) |
 
 > **Remarque.** Ne pas forcer. Un `incertain` honnête est préférable à une variété devinée. Le dialecte se juge segment par segment, d'après ce qui est entendu, pas d'après l'origine connue du locuteur (voir 8.4).
 
@@ -350,6 +397,7 @@ Identifiant par source. Exemple dans une vidéo de culte : `S1` = pasteur, `S2` 
 | transcription incertaine | Au moins un `((mot))` dans le segment | `((Ambohimanarina))` |
 | nom propre à vérifier | Nom de lieu ou de personne douteux | `((Andrianampoinimerina))` |
 | emprunt ambigu | Cas de la règle 3.6 | `boaty` / `boîte` |
+| plusieurs locuteurs | Région inséparable avec balises (cas 8.5) | `[S1] Rahoviana? [S2] Rahampitso.` |
 
 ### Région Exclu : raisons
 
@@ -384,6 +432,7 @@ Chaque annotation porte la version de la convention.
 - `v1.0` : convention initiale.
 - `v1.1` : ajout de la règle du tiret pour les mots hybrides (`mi-confirmer`). Les annotations `v1.0` contenant `mikonfirmé` sont repérables et corrigeables automatiquement.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
+- `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 
 ### Lexique partagé
 
@@ -409,6 +458,7 @@ Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la co
 | *"Eny"* isolé de l'interlocuteur ? | Pas de segment. |
 | Réponse courte avec contenu ? | Segment à part, même sous 2 s. |
 | Le locuteur change de dialecte ? | Dialecte selon ce qu'on entend, même `S`. |
+| Échange trop rapide pour couper ? | Une région, `[S1] ... [S2] ...`, Locuteur `S1+S2`. |
 | Cas non prévu ? | Indicateur + signaler au responsable. |
 
 ---

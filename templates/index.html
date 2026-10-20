@@ -1019,9 +1019,8 @@ function learnWords(text) {
 // closest earlier segment that has them; language and dialect pre-filled that way stay
 // "à confirmer" (state.unconfirmed) until the transcriber picks or confirms them, since rule 8.4
 // asks to judge them on each segment.
-const FLAG_LABELS = { chevauchement: "chevauchement de voix", incertain: "transcription incertaine",
-  nom_propre: "nom propre à vérifier", emprunt_ambigu: "emprunt ambigu" };
-const FIELD_LABELS = { lang: "la langue", dialect: "le dialecte", register: "le registre", quality: "la qualité audio" };
+const FIELD_LABELS = { lang: "la langue", dialect: "le dialecte", register: "le registre",
+  quality: "la qualité audio", speaker: "le locuteur" };
 const CARRIED = ["lang", "dialect", "register", "quality", "speaker"];
 const RECHECK = ["lang", "dialect"];
 
@@ -1072,13 +1071,9 @@ function conventionProblems(text) {
   const toConfirm = [...state.unconfirmed].filter(k => m[k]);
   if (toConfirm.length) out.push("Confirmer " + toConfirm.map(k => FIELD_LABELS[k]).join(" et ")
     + " (repris du segment précédent : à juger sur ce segment).");
-  const tags = state.conv?.tags || [];
-  const bad = [...new Set((text.match(/\[[^\[\]]*\]/g) || []).filter(x => !tags.includes(x)))];
-  for (const tag of bad) {
-    const word = tag.slice(1, -1).trim();
-    out.push(`Balise inconnue : ${tag}.` + (word ? ` Si c'est une hésitation, écrire [euh]. Si « ${word} » est vraiment `
-      + `prononcé (interjection), l'écrire sans crochets : ${word}.` : "") + ` Balises permises : ${tags.join(" ")}.`);
-  }
+  if (m.speaker && !new RegExp(state.conv.speaker_pattern).test(m.speaker))
+    out.push("Locuteur : S1, S2… ou S1+S2 pour une région à plusieurs locuteurs.");
+  // The other rules (tags, digits, rule 8.5…) are checked by the server, which explains each one.
   return out;
 }
 
@@ -1092,7 +1087,6 @@ function conventionPanelHtml(t) {
   const field = (key, label, body, extra = "") =>
     `<div class="field ${state.unconfirmed.has(key) ? "unconfirmed" : ""} ${extra}" data-field="${key}">
        <div class="flabel">${label}<span class="todo">à confirmer</span></div>${body}</div>`;
-  const dialects = [...new Set([...c.dialects, ...c.used_dialects])];
   const stateLabel = t.convention ? `<span class="conv-state ok">validé ${escapeHtml(t.convention)}</span>`
     : t.annotation && (t.status === "done" || t.status === "review")
       ? `<span class="conv-state old">avant convention</span>` : "";
@@ -1102,16 +1096,13 @@ function conventionPanelHtml(t) {
         <a href="/static/convention-transcription-prova-mg.md" target="_blank" rel="noopener">Lire la convention ↗</a></div>
       <div class="conv-grid">
         ${field("lang", "Langue *", seg("lang", c.langs))}
-        ${field("dialect", "Dialecte *", `<div class="row">
-            <input type="text" id="convDialect" list="convDialects" value="${escapeHtml(m.dialect || "")}" placeholder="officiel (merina standard)" autocomplete="off">
-            <button type="button" class="confirm" data-confirm="dialect">✓ Confirmer</button></div>
-          <datalist id="convDialects">${dialects.map(d => `<option value="${escapeHtml(d)}">`).join("")}</datalist>`)}
         ${field("register", "Registre *", seg("register", c.registers))}
         ${field("quality", "Qualité audio *", seg("quality", c.qualities))}
-        ${field("speaker", "Locuteur", `<input type="text" id="convSpeaker" list="convSpeakers" value="${escapeHtml(m.speaker || "")}" placeholder="S1" autocomplete="off" style="width:120px">
+        ${field("dialect", "Dialecte *", seg("dialect", c.dialects), "wide")}
+        ${field("speaker", "Locuteur *", `<input type="text" id="convSpeaker" list="convSpeakers" value="${escapeHtml(m.speaker || "")}" placeholder="S1, ou S1+S2" autocomplete="off" style="width:140px">
           <datalist id="convSpeakers">${c.used_speakers.map(s => `<option value="${escapeHtml(s)}">`).join("")}</datalist>`)}
         ${field("flags", "Indicateurs", `<div class="checks">${c.flags.map(f =>
-          `<label><input type="checkbox" data-flag="${f}" ${m.flags.includes(f) ? "checked" : ""}> ${escapeHtml(FLAG_LABELS[f] || f)}</label>`).join("")}</div>`, "wide")}
+          `<label><input type="checkbox" data-flag="${escapeHtml(f)}" ${m.flags.includes(f) ? "checked" : ""}> ${escapeHtml(f)}</label>`).join("")}</div>`, "wide")}
         <div class="field wide keep exclu">
           <label><input type="checkbox" id="convExcluded" ${state.excluded ? "checked" : ""}> Exclure ce segment</label>
           <select id="convReason" ${state.excluded ? "" : "disabled"}>
@@ -1155,11 +1146,8 @@ function wireConventionPanel() {
     state.meta[b.dataset.set] = b.dataset.value;
     conventionChanged(b.dataset.set);
   });
-  panel.querySelectorAll("[data-confirm]").forEach(b => b.onclick = () => conventionChanged(b.dataset.confirm));
-  const dialect = document.getElementById("convDialect");
-  dialect.oninput = () => { state.meta.dialect = dialect.value.trim(); conventionChanged("dialect"); };
   const speaker = document.getElementById("convSpeaker");
-  speaker.oninput = () => { state.meta.speaker = speaker.value.trim(); conventionChanged("speaker"); };
+  speaker.oninput = () => { state.meta.speaker = speaker.value.trim().toUpperCase().replace(/\s+/g, ""); conventionChanged("speaker"); };
   panel.querySelectorAll("[data-flag]").forEach(cb => cb.onchange = () => {
     state.meta.flags = [...panel.querySelectorAll("[data-flag]:checked")].map(x => x.dataset.flag);
     conventionChanged();
