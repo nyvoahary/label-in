@@ -86,29 +86,95 @@ def problems(status: str, text: str, meta: dict) -> list[str]:
     missing = [label for key, label in labels.items() if not meta.get(key)]
     if missing:
         out.append("Renseigner " + ", ".join(missing) + ".")
+    return out + [e["msg"] for e in text_errors(text, meta)]
+
+
+def _issue(msg: str, fix: dict | None = None) -> dict:
+    return {"msg": msg, "fix": fix} if fix else {"msg": msg}
+
+
+def text_errors(text: str, meta: dict) -> list[dict]:
+    """Blocking rules that depend on the text, each with a one-click fix when there is one."""
+    out = []
     flags = meta.get("flags") or []
     if re.search(r"\d", SPEAKER_TAG_RE.sub("", text)):
-        out.append("Chiffres interdits : écrire les nombres en lettres, dans la langue parlée (règle 4).")
+        out.append(_issue("Chiffres interdits : écrire les nombres en lettres, dans la langue parlée (règle 4)."))
     if "((" in text and FLAG_UNCERTAIN not in flags:
-        out.append("Le texte contient ((mot)) : cocher l'indicateur « transcription incertaine ».")
-    out += [unknown_tag_message(t) for t in unknown_tags(text)]
+        out.append(_issue("Le texte contient ((mot)) : cocher l'indicateur « transcription incertaine ».",
+                          {"type": "flag", "value": FLAG_UNCERTAIN, "label": "Cocher « transcription incertaine »"}))
+    out += [_issue(unknown_tag_message(t)) for t in unknown_tags(text)]
 
     # Rule 8.5: a segment with several speakers is written [S1] … [S2] …, speaker "S1+S2".
     tagged = SPEAKER_TAG_RE.findall(text)
     speakers = (meta.get("speaker") or "").split("+")
     multi = bool(tagged) or len(speakers) > 1 or FLAG_MULTI in flags or meta.get("dialect") == DIALECT_MULTI
     if multi:
+        ids = "+".join(sorted(set(tagged), key=lambda s: int(s[1:])))
         if not tagged:
-            out.append("Plusieurs locuteurs (règle 8.5) : écrire [S1], [S2]… avant chaque tour de parole.")
+            out.append(_issue("Plusieurs locuteurs (règle 8.5) : écrire [S1], [S2]… avant chaque tour de parole."))
         elif not re.match(r"\s*\[S\d+\]", text):
-            out.append("La première prise de parole doit aussi commencer par sa balise, ex. [S1] (règle 8.5).")
-        if len(speakers) < 2:
-            out.append("Plusieurs locuteurs : le champ Locuteur doit les lister, ex. S1+S2 (règle 8.5).")
-        elif tagged and re.match(r"\s*\[S\d+\]", text) and set(tagged) != set(speakers):
-            shown = " ".join(f"[{s}]" for s in sorted(set(tagged)))
-            out.append(f"Les balises du texte ({shown}) ne correspondent pas au champ Locuteur ({meta.get('speaker')}).")
+            out.append(_issue("La première prise de parole doit aussi commencer par sa balise, ex. [S1] (règle 8.5)."))
+        if tagged and set(tagged) != set(speakers) and (len(speakers) < 2 or re.match(r"\s*\[S\d+\]", text)):
+            out.append(_issue(f"Le champ Locuteur doit lister les locuteurs des balises : {ids} (règle 8.5).",
+                              {"type": "speaker", "value": ids, "label": f"Locuteur = {ids}"}))
+        elif not tagged and len(speakers) < 2:
+            out.append(_issue("Plusieurs locuteurs : le champ Locuteur doit les lister, ex. S1+S2 (règle 8.5)."))
         if FLAG_MULTI not in flags:
-            out.append("Cocher l'indicateur « plusieurs locuteurs » (règle 8.5).")
+            out.append(_issue("Cocher l'indicateur « plusieurs locuteurs » (règle 8.5).",
+                              {"type": "flag", "value": FLAG_MULTI, "label": "Cocher « plusieurs locuteurs »"}))
+    return out
+
+
+ALLOWED_CHARS_RE = re.compile(r"[^\w\s.,?'\-]")
+MG_FORBIDDEN_RE = re.compile(r"[cquwxàâäçéèêëîïôöùûü]", re.I)
+DOTTED_ACRONYM_RE = re.compile(r"\b(?:[A-Za-z]\.){2,}")
+TITLE_RE = re.compile(r"\b(Dr|Pr|Mme|Mlle|Mr)\b\.?")
+
+
+def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: tuple = ()) -> list[dict]:
+    """Likely mistakes that don't block saving: the transcriber may be right."""
+    out = []
+    # Text without the markup the convention allows.
+    plain = SPEAKER_TAG_RE.sub(" ", TAG_RE.sub(" ", text)).replace("((", " ").replace("))", " ")
+    if "’" in text:
+        out.append(_issue("Apostrophe typographique ’ : écrire l'apostrophe simple '.",
+                          {"type": "replace", "from": "’", "to": "'", "label": "Remplacer ’ par '"}))
+    bad = sorted(set(ALLOWED_CHARS_RE.findall(plain.replace("’", "'"))) - {"_"})
+    if bad:
+        out.append(_issue(f"Ponctuation non permise : {' '.join(bad)}. Seuls . , ? sont autorisés (règle 5)."))
+    for acro in sorted(set(DOTTED_ACRONYM_RE.findall(text))):
+        fixed = acro.replace(".", "").upper()
+        out.append(_issue(f"Sigle « {acro} » : en capitales, sans points ({fixed}) (règle 5).",
+                          {"type": "replace", "from": acro, "to": fixed, "label": f"Écrire {fixed}"}))
+    for title in sorted(set(m.group(0) for m in TITLE_RE.finditer(text))):
+        out.append(_issue(f"« {title} » : écrire le titre tel qu'il est prononcé, ex. dokotera Rabe ou docteur Rabe (règle 5)."))
+    first = re.search(r"[^\W\d_]", plain)
+    if first and first.group(0).islower():
+        out.append(_issue("Majuscule en début de phrase (règle 5).",
+                          {"type": "capitalize", "label": "Mettre la majuscule"}))
+    if meta.get("lang") == "mg":
+        words = {w for w in re.split(r"[\s.,?]+", plain) if w}
+        foreign = sorted(w for w in words if MG_FORBIDDEN_RE.search(w))
+        if foreign:
+            out.append(_issue(f"Langue « mg » mais {', '.join(foreign[:5])} : c, q, u, w, x et les accents n'existent pas "
+                              "en malgache. Faute d'orthographe (règle 2), ou mot prononcé à la française : "
+                              "alors langue « mixte » (règle 3).",
+                              {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}))
+        parts = {p.lower() for w in words - set(foreign) for p in re.split(r"['\-]", w) if len(p) > 1}
+        final_i = sorted(p for p in parts if p.endswith("i"))
+        inner_y = sorted(p for p in parts if "y" in p[:-1])
+        if final_i:
+            out.append(_issue(f"{', '.join(final_i[:5])} : en malgache, -y en fin de mot (misy, pas misi) (règle 2)."))
+        if inner_y:
+            out.append(_issue(f"{', '.join(inner_y[:5])} : en malgache, -i à l'intérieur du mot (fitiavana, pas fytiavana) (règle 2)."))
+    if duration is not None and 0 < duration < 2:
+        out.append(_issue("Segment de moins de 2 s : à garder seulement si c'est une réponse courte avec contenu, "
+                          "sinon exclure (règle 8.2)."))
+    elif duration and duration > 30:
+        out.append(_issue("Segment de plus de 30 s : au-delà de la fenêtre de Whisper (règle 8)."))
+    norm = " ".join(text.split()).lower()
+    if norm and any(norm == " ".join((d or "").split()).lower() for d in drafts):
+        out.append(_issue("Texte identique au brouillon automatique : le relire mot à mot avant de valider (règle 7)."))
     return out
 
 

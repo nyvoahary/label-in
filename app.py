@@ -526,6 +526,22 @@ def _save_one(project: dict, idx: int, audio: str, text: str, status: str, meta:
     return jsonify({"ok": True, "annotation": annos[audio]})
 
 
+@app.route("/api/projects/<name>/tasks/<int:idx>/check", methods=["POST"])
+def api_check(name: str, idx: int):
+    """Live convention check while typing: blocking errors and warnings about the text."""
+    tasks = load_tasks(get_project(name))
+    if idx < 0 or idx >= len(tasks):
+        abort(404)
+    payload = request.get_json(force=True) or {}
+    text = (payload.get("text") or "").strip()
+    meta = convention.clean_meta(payload.get("meta"))
+    data = tasks[idx].get("data", {})
+    duration = (data.get("end") or 0) - (data.get("start") or 0) if data.get("end") is not None else None
+    drafts = tuple(p["text"] for p in all_predictions(tasks[idx]))
+    return jsonify({"errors": convention.text_errors(text, meta),
+                    "warnings": convention.text_warnings(text, meta, duration, drafts)})
+
+
 @app.route("/api/projects/<name>/export")
 def api_export(name: str):
     project = get_project(name)

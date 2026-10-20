@@ -101,6 +101,25 @@
   .conv-errors { color: #ef4444; font-size: 12px; margin-top: 10px; white-space: pre-line; }
   .conv-errors:empty { display: none; }
   .actions .save.excl { background: var(--muted); border-color: var(--muted); }
+
+  /* Tag bar and live checks */
+  .tagbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+  .tagbar button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+    padding: 3px 8px; font-size: 12px; font-family: ui-monospace, monospace; cursor: pointer; }
+  .tagbar button:hover { border-color: var(--accent); }
+  .tagbar button kbd { font-size: 9px; color: var(--muted); margin-left: 4px; font-family: inherit; }
+  .tagbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+  .live { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .live:empty { display: none; }
+  .live .item { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45;
+    padding: 5px 9px; border-radius: 6px; border: 1px solid; }
+  .live .item.err { color: #ef4444; border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.06); }
+  .live .item.warn { color: var(--pending); border-color: rgba(234,179,8,.35); background: rgba(234,179,8,.06); }
+  .live .item .kind { font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; white-space: nowrap; }
+  .live .item .msg { flex: 1; color: var(--text); }
+  .live .item button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+    padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+  .live .item button:hover { border-color: var(--accent); }
   .task-item .preview { color: var(--muted); margin-top: 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -721,11 +740,18 @@ function select(idx) {
       `).join("")}
     </div>
     <div class="label">Annotation</div>
+    ${state.conv ? `<div class="tagbar" id="tagbar">
+      ${state.conv.tags.map((tag, i) => `<button type="button" data-tag="${escapeHtml(tag)}" title="Insérer ${escapeHtml(tag)} (Alt+${i + 1})">${escapeHtml(tag)}<kbd>Alt+${i + 1}</kbd></button>`).join("")}
+      <button type="button" data-tag="(())" title="Mot entendu mais incertain : entoure la sélection (Alt+${state.conv.tags.length + 1})">((mot))<kbd>Alt+${state.conv.tags.length + 1}</kbd></button>
+      <span class="sep"></span>
+      ${["S1", "S2", "S3"].map(s => `<button type="button" data-tag="[${s}]" title="Tour de parole de ${s} (règle 8.5, échange inséparable)">[${s}]</button>`).join("")}
+    </div>` : ""}
     <div id="annotationWrap">
       <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" || t.status === "excluded" ? "" : t.prediction) || "")}</textarea>
       <div id="taMirror"></div>
       <div id="suggestionBox"></div>
     </div>
+    <div class="live" id="liveChecks"></div>
     ${conventionPanelHtml(t)}
     <div class="actions">
       <button class="save" id="saveBtn">Save & Next</button>
@@ -742,7 +768,8 @@ function select(idx) {
       <kbd>[</kbd>/<kbd>]</kbd> Set loop start/end ·
       <kbd>L</kbd> Toggle loop ·
       <kbd>\\</kbd> Clear loop ·
-      <kbd>Ctrl</kbd>+<kbd>D</kbd> Copy prediction
+      <kbd>Ctrl</kbd>+<kbd>D</kbd> Copy prediction ·
+      <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>5</kbd> Balises
       <br><span style="color:var(--muted)">Tip: drag on the waveform to draw a loop region. Click a word in the prediction to replace the word at your cursor; select multiple words then click to insert the selection.</span>
     </div>
   `;
@@ -801,6 +828,7 @@ function select(idx) {
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
     normalizeHesitations(ta);
+    scheduleLiveCheck();
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
     updateSuggestions();
@@ -1134,6 +1162,7 @@ function conventionChanged(key) {
   document.getElementById("convErrors").textContent = "";
   document.querySelectorAll(".conv .field.missing").forEach(f => f.classList.remove("missing"));
   refreshConventionPanel();
+  scheduleLiveCheck();
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(() => autoSave(), 1500);
 }
@@ -1154,7 +1183,107 @@ function wireConventionPanel() {
   });
   document.getElementById("convExcluded").onchange = (e) => { state.excluded = e.target.checked; conventionChanged(); };
   document.getElementById("convReason").onchange = (e) => { state.meta.exclude_reason = e.target.value; conventionChanged(); };
+  document.querySelectorAll("#tagbar [data-tag]").forEach(b => {
+    b.onmousedown = e => e.preventDefault();
+    b.onclick = () => insertTag(b.dataset.tag);
+  });
   refreshConventionPanel();
+  runLiveCheck();
+}
+
+// --- Tag bar ----------------------------------------------------------------------------
+// Inserts a tag at the cursor; "(())" wraps the selection as an uncertain word and ticks the
+// matching flag (the convention requires it with ((mot))).
+function insertTag(tag) {
+  const ta = document.getElementById("annotation");
+  if (!ta) return;
+  const start = document.activeElement === ta ? ta.selectionStart : savedCursor;
+  const end = document.activeElement === ta ? ta.selectionEnd : savedCursor;
+  const v = ta.value;
+  let insert, caret;
+  if (tag === "(())") {
+    const word = v.slice(start, end).trim();
+    insert = `((${word}))`;
+    caret = word ? start + insert.length : start + 2;
+    if (!state.meta.flags.includes("transcription incertaine")) toggleFlag("transcription incertaine", true);
+  } else {
+    const before = start > 0 && !/\s/.test(v[start - 1]) ? " " : "";
+    const after = /^\s/.test(v.slice(end)) ? "" : " ";
+    insert = before + tag + after;
+    caret = start + insert.length;
+  }
+  ta.value = v.slice(0, start) + insert + v.slice(end);
+  ta.focus();
+  ta.setSelectionRange(caret, caret);
+  savedCursor = caret;
+  ta.dispatchEvent(new Event("input"));
+}
+
+function toggleFlag(flag, on) {
+  const flags = new Set(state.meta.flags);
+  on ? flags.add(flag) : flags.delete(flag);
+  state.meta.flags = (state.conv?.flags || []).filter(f => flags.has(f));
+  document.querySelectorAll("#conv [data-flag]").forEach(cb => { cb.checked = flags.has(cb.dataset.flag); });
+  conventionChanged();
+}
+
+// --- Live checks --------------------------------------------------------------------------
+// The server holds the rules; it answers with blocking errors and warnings, some with a fix.
+let liveSeq = 0;
+function scheduleLiveCheck() {
+  clearTimeout(state.liveTimer);
+  state.liveTimer = setTimeout(runLiveCheck, 400);
+}
+
+async function runLiveCheck() {
+  const ta = document.getElementById("annotation");
+  if (!ta || !state.conv || state.current == null) return;
+  const seq = ++liveSeq, idx = state.current;
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: ta.value, meta: state.meta }),
+    });
+    const j = await r.json();
+    if (seq === liveSeq && idx === state.current) renderLiveChecks(state.excluded ? { errors: [], warnings: [] } : j);
+  } catch (e) { /* the save-time check still applies */ }
+}
+
+function renderLiveChecks({ errors, warnings }) {
+  const box = document.getElementById("liveChecks");
+  if (!box) return;
+  const items = [...errors.map(e => ({ ...e, kind: "err" })), ...warnings.map(w => ({ ...w, kind: "warn" }))];
+  state.liveFixes = items.map(i => i.fix);
+  box.innerHTML = items.map((i, n) => `
+    <div class="item ${i.kind}">
+      <span class="kind">${i.kind === "err" ? "bloquant" : "à vérifier"}</span>
+      <span class="msg">${escapeHtml(i.msg)}</span>
+      ${i.fix ? `<button type="button" data-fix="${n}">${escapeHtml(i.fix.label)}</button>` : ""}
+    </div>`).join("");
+  box.querySelectorAll("[data-fix]").forEach(b => {
+    b.onmousedown = e => e.preventDefault();
+    b.onclick = () => applyFix(state.liveFixes[+b.dataset.fix]);
+  });
+}
+
+function applyFix(fix) {
+  const ta = document.getElementById("annotation");
+  if (!fix || !ta) return;
+  if (fix.type === "flag") toggleFlag(fix.value, true);
+  else if (fix.type === "speaker") {
+    state.meta.speaker = fix.value;
+    document.getElementById("convSpeaker").value = fix.value;
+    conventionChanged("speaker");
+  } else if (fix.type === "lang") {
+    state.meta.lang = fix.value;
+    conventionChanged("lang");
+  } else if (fix.type === "replace") {
+    ta.value = ta.value.split(fix.from).join(fix.to);
+    ta.dispatchEvent(new Event("input"));
+  } else if (fix.type === "capitalize") {
+    ta.value = ta.value.replace(/^((?:\s*\[[^\]]*\])*\s*(?:\(\()?)(\p{Ll})/u, (_, pre, c) => pre + c.toUpperCase());
+    ta.dispatchEvent(new Event("input"));
+  }
 }
 
 function showConventionErrors(errors) {
@@ -1320,6 +1449,12 @@ document.addEventListener("keydown", (e) => {
     const cur = state.tasks[state.current];
     if (ta) ta.value = (cur?.predictions?.[0]?.text) || cur?.prediction || "";
     return;
+  }
+  // Alt+1…5: insert [euh], [rire], [bruit], [inaudible], ((mot)).
+  if (e.altKey && !e.ctrlKey && state.conv && /^Digit[1-9]$/.test(e.code)) {
+    const tags = [...state.conv.tags, "(())"];
+    const tag = tags[+e.code.slice(5) - 1];
+    if (tag) { e.preventDefault(); insertTag(tag); return; }
   }
   // Typing in the convention fields: keep normal keys (Tab moves between fields).
   if (document.activeElement?.closest?.("#conv")) return;
