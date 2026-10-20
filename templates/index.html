@@ -800,6 +800,7 @@ function select(idx) {
 
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
+    normalizeHesitations(ta);
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
     updateSuggestions();
@@ -1048,6 +1049,17 @@ function confirmedMeta() {
   state.unconfirmed.forEach(k => delete m[k]);
   if (!state.excluded) delete m.exclude_reason;
   return m;
+}
+
+// Rule 6: every hesitation sound is written [euh]. Typing [ah], [hmm]… converts it on the spot.
+const HESITATION_RE = /\[(ah|eh|euh|hmm?|mm+|em|ehm|euhm)\]/gi;
+function normalizeHesitations(ta) {
+  if (!state.conv || !HESITATION_RE.test(ta.value)) return;
+  HESITATION_RE.lastIndex = 0;
+  const before = ta.value.slice(0, ta.selectionStart).replace(HESITATION_RE, "[euh]");
+  ta.value = before + ta.value.slice(ta.selectionStart).replace(HESITATION_RE, "[euh]");
+  ta.setSelectionRange(before.length, before.length);
+  savedCursor = before.length;
 }
 
 function conventionProblems(text) {
