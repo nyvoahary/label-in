@@ -94,6 +94,7 @@
   .project-card .done-badge { position: absolute; top: 0; right: 0; background: var(--done);
     color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
     padding: 4px 14px 4px 16px; border-radius: 0 10px 0 8px; }
+  .project-card .done-badge.in-progress { background: var(--accent); }
   .project-card .name { font-size: 14px; font-weight: 600; margin-bottom: 12px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     display: flex; align-items: center; gap: 8px; }
@@ -354,7 +355,8 @@ function renderLocalCard(p, onNas) {
 
   return `
     <div class="project-card clickable" data-name="${esc(p.name)}">
-      ${pct >= 100 ? `<div class="done-badge">Done</div>` : ""}
+      ${pct >= 100 ? `<div class="done-badge">Done</div>`
+        : pct > 0 ? `<div class="done-badge in-progress">In progress</div>` : ""}
       <div class="name">${esc(p.name)}</div>
       <div class="stats">
         <div class="stat-item done"><div class="num">${p.done}</div><div class="lbl">Done</div></div>
