@@ -27,7 +27,7 @@ Plateforme Label-in, corpus de parole malgache PROVA-MG.
 
 | | |
 |---|---|
-| Responsable du traitement | **[À COMPLÉTER : nom, qualité (doctorant, laboratoire…)]** |
+| Responsable du traitement | Randriamanasina Mianala Loharano **[À COMPLÉTER : qualité (doctorant, laboratoire…)]** |
 | Établissement | **[À COMPLÉTER : université, école doctorale, directeur de thèse]** |
 | Contact | **[À COMPLÉTER : adresse e-mail dédiée]** |
 | Cadre juridique | Loi n° 2014-038 du 9 janvier 2015 sur la protection des données à caractère personnel (Madagascar). **[À COMPLÉTER : préciser si le RGPD s'applique, par exemple partenaire ou financement européen.]** |
