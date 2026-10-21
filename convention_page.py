@@ -1,9 +1,9 @@
-"""Renders the Markdown documents in static/ as HTML (/documentation and /confidentialite).
+"""Renders static/convention-transcription-prova-mg.md as HTML for the /convention page.
 
-A small converter for the Markdown these documents use (headings, tables, quotes, lists,
-code, bold/italic, links), so the .md file stays the single source. Numbered headings get
-stable anchors ("## 6. Balises" -> #regle-6, "### 8.5 ..." -> #regle-8-5) that the editor
-links to, and "règle 8.5" / "voir 8.4" in the text become links.
+A small converter for the Markdown this document uses (headings, tables, quotes, lists,
+code, bold/italic), so the .md file stays the single source. Numbered headings get stable
+anchors ("## 6. Balises" -> #regle-6, "### 8.5 ..." -> #regle-8-5) that the editor links to,
+and "règle 8.5" / "voir 8.4" in the text become links.
 """
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ import re
 from pathlib import Path
 
 SOURCE = Path(__file__).parent / "static" / "convention-transcription-prova-mg.md"
-PRIVACY = Path(__file__).parent / "static" / "politique-confidentialite.md"
-_cache: dict = {}
+_cache: dict = {"mtime": None, "page": None}
 
 HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
 NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(.*)$")
@@ -37,7 +36,6 @@ def _inline(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<em>\1</em>", text)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', text)
-    text = re.sub(r"\[([^\]]+)\]\((/[^)\s]*)\)", r'<a href="\2">\1</a>', text)
     return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m.group(1))], text)
 
 
@@ -61,13 +59,12 @@ def _cells(line: str) -> list[str]:
     return out
 
 
-def render(source: Path = SOURCE, prefix: str = "regle-") -> dict:
-    """{"title", "version", "toc": [{id, label, children}], "html"} (cached on the file's mtime).
-    `prefix` starts the anchors of numbered headings."""
-    mtime = source.stat().st_mtime
-    if source in _cache and _cache[source]["mtime"] == mtime:
-        return _cache[source]["page"]
-    lines = source.read_text("utf-8").splitlines()
+def render() -> dict:
+    """{"title", "version", "toc": [{id, label, children}], "html"} (cached on the file's mtime)."""
+    mtime = SOURCE.stat().st_mtime
+    if _cache["mtime"] == mtime:
+        return _cache["page"]
+    lines = SOURCE.read_text("utf-8").splitlines()
     out: list[str] = []
     toc: list[dict] = []
     ids: set[str] = set()
@@ -101,7 +98,7 @@ def render(source: Path = SOURCE, prefix: str = "regle-") -> dict:
                 i += 1
                 continue
             num = NUMBERED_RE.match(text)
-            cid = unique(prefix + num.group(1).replace(".", "-") if num else _slug(text))
+            cid = unique("regle-" + num.group(1).replace(".", "-") if num else _slug(text))
             label = text
             if level == 2:
                 toc.append({"id": cid, "label": label, "children": []})
@@ -166,16 +163,15 @@ def render(source: Path = SOURCE, prefix: str = "regle-") -> dict:
             i += 1
         text = " ".join(para)
         vm = re.search(r"v\d+\.\d+", text)
-        marker = re.search(r"\b(?:CONVENTION|DOC)_VERSION ", text)
-        if not version and marker and vm:
+        if not version and "CONVENTION_VERSION" in text and vm:
             version = vm.group(0)
-            text = text.replace(marker.group(0), "")
+            text = text.replace("CONVENTION_VERSION ", "")
         out.append(f"<p>{_inline(text)}</p>")
 
     body = "\n".join(out)
 
     def link(m):
-        anchor = prefix + m.group(2).replace(".", "-")
+        anchor = "regle-" + m.group(2).replace(".", "-")
         return f'{m.group(1)}<a href="#{anchor}">{m.group(2)}</a>' if anchor in ids else m.group(0)
 
     # Only outside tags and code: split the HTML on tags and touch text nodes only.
@@ -188,5 +184,5 @@ def render(source: Path = SOURCE, prefix: str = "regle-") -> dict:
         if not in_code:
             parts[n] = RULE_REF_RE.sub(link, part)
     page = {"title": title, "version": version, "toc": toc, "html": "".join(parts)}
-    _cache[source] = {"mtime": mtime, "page": page}
+    _cache.update(mtime=mtime, page=page)
     return page

@@ -128,7 +128,7 @@ def _recent_fails(ip: str) -> list[float]:
     return fails
 
 
-PUBLIC_ENDPOINTS = {"login", "logout", "documentation", "convention_doc", "privacy"}
+PUBLIC_ENDPOINTS = {"login", "logout", "documentation", "convention_doc"}
 
 
 @app.before_request
@@ -470,15 +470,7 @@ def api_tasks(name: str):
 @app.route("/documentation")
 def documentation():
     """The transcription convention, readable without an account (shareable link)."""
-    return render_template("convention.html", page=convention_page.render(), user=current_user(),
-                           search_hint="ex. apostrophe, [personnel]")
-
-
-@app.route("/confidentialite")
-def privacy():
-    """Privacy and data-use policy, public like the documentation."""
-    return render_template("convention.html", page=convention_page.render(convention_page.PRIVACY, "section-"),
-                           user=current_user(), search_hint="ex. cookie, conservation, droits")
+    return render_template("convention.html", page=convention_page.render(), user=current_user())
 
 
 @app.route("/convention")
