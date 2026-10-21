@@ -100,12 +100,13 @@
   <h1>{{ page.title }}</h1>
   {% if page.version %}<span class="ver">{{ page.version }}</span>{% endif %}
   <div class="spacer"></div>
-  <span class="links"><a href="/projects">Éditeur</a> <a href="/">Dashboard</a></span>
+  <span class="links"><a href="/documentation">Convention</a> <a href="/confidentialite">Confidentialité</a>
+    <a href="/projects">Éditeur</a> <a href="/">Dashboard</a></span>
 </div>
 
 <div class="layout">
-  <nav id="nav" aria-label="Sommaire de la convention">
-    <div class="search"><input id="navSearch" type="search" placeholder="Rechercher (ex. apostrophe, [personnel])" autocomplete="off"></div>
+  <nav id="nav" aria-label="Sommaire">
+    <div class="search"><input id="navSearch" type="search" placeholder="Rechercher ({{ search_hint }})" autocomplete="off"></div>
     <ul id="toc">
       {% for s in page.toc %}
       <li data-id="{{ s.id }}"><a href="#{{ s.id }}">{{ s.label }}</a>
