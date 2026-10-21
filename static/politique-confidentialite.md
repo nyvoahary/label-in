@@ -27,9 +27,9 @@ Plateforme Label-in, corpus de parole malgache PROVA-MG.
 
 | | |
 |---|---|
-| Responsable du traitement | Randriamanasina Mianala Loharano **[À COMPLÉTER : qualité (doctorant, laboratoire…)]** |
-| Établissement | **[À COMPLÉTER : université, école doctorale, directeur de thèse]** |
-| Contact | **[À COMPLÉTER : adresse e-mail dédiée]** |
+| Responsable du traitement | Randriamanasina Mianala Loharano, doctorant |
+| Établissement | École doctorale EDTM **[À COMPLÉTER : université, directeur de thèse]** |
+| Contact | mianalaloharano@gmail.com |
 | Cadre juridique | Loi n° 2014-038 du 9 janvier 2015 sur la protection des données à caractère personnel (Madagascar). **[À COMPLÉTER : préciser si le RGPD s'applique, par exemple partenaire ou financement européen.]** |
 
 ---
@@ -146,7 +146,7 @@ Selon la loi applicable, toute personne concernée peut demander l'**accès** au
 - les **transcripteurs**, pour les données de leur compte et leur nom dans l'historique des segments ;
 - les **personnes entendues** dans les enregistrements, qui peuvent demander le retrait d'un passage.
 
-Écrire au contact indiqué en section 1 : **[À COMPLÉTER : adresse e-mail]**. La réponse est donnée dans un délai de **[À COMPLÉTER : par exemple 30 jours]**.
+Écrire au contact indiqué en section 1 : mianalaloharano@gmail.com. La réponse est donnée dans un délai de **[À COMPLÉTER : par exemple 30 jours]**.
 
 En cas de désaccord, une réclamation peut être adressée à la **Commission Malagasy sur l'Informatique et les Libertés (CMIL)** **[À COMPLÉTER : vérifier l'autorité compétente]**.
 
