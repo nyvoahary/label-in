@@ -251,7 +251,11 @@ function renderProjects() {
   const rows = state.projects.map(p => {
     const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
     const people = Object.entries(p.by_user).sort((a, b) => b[1] - a[1])
-      .map(([who, n]) => `<b>${esc(who || "unknown")}</b> ${n}`).join(" · ") || "—";
+      .map(([who, n]) => `<b>${esc(who || "unknown")}</b> ${n}`
+        + (p.corrected_of[who] ? ` <span class="muted">(${p.corrected_of[who]} corrected by others)</span>` : ""))
+      .join(" · ") || "—";
+    const fixers = Object.entries(p.corrections).sort((a, b) => b[1] - a[1])
+      .map(([who, n]) => `<b>${esc(who)}</b> ${n}`).join(" · ");
     if (state.editing === p.name) {
       return `<tr class="inline-form"><td colspan="5">
         <div class="form-row">
@@ -265,7 +269,8 @@ function renderProjects() {
     }
     return `
       <tr>
-        <td><b>${esc(p.name)}</b><div class="people">Done by: ${people}</div></td>
+        <td><b>${esc(p.name)}</b><div class="people">Done by: ${people}</div>
+          ${fixers ? `<div class="people">Corrections: ${fixers}</div>` : ""}</td>
         <td style="min-width:130px">
           <div class="bar-track"><div class="bar-fill ${pct >= 100 ? "full" : ""}" style="width:${pct}%"></div></div>
           <div class="people" style="margin-top:4px">${p.done} / ${p.total} done (${pct}%)</div>

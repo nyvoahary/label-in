@@ -456,6 +456,8 @@ def api_tasks(name: str):
             "status": (anno or {}).get("status", "pending"),
             "updated_at": (anno or {}).get("updated_at"),
             "updated_by": (anno or {}).get("updated_by"),
+            "done_by": (anno or {}).get("done_by"),
+            "corrected_by": (anno or {}).get("corrected_by", []),
             "meta": (anno or {}).get("meta"),
             "convention": (anno or {}).get("convention"),
             "split_of": d.get("split_of"),
@@ -575,10 +577,34 @@ def _save_one(project: dict, idx: int, audio: str, text: str, status: str, meta:
         annos[audio]["convention"] = convention.VERSION
     elif existing.get("convention"):
         annos[audio]["convention"] = existing["convention"]
-    if current_user():
-        annos[audio]["updated_by"] = current_user()
+    user = current_user()
+    if user:
+        annos[audio]["updated_by"] = user
+    _credit(annos[audio], existing, user)
     save_annotations(project, annos)
     return jsonify({"ok": True, "annotation": annos[audio]})
+
+
+FINISHED = ("done", "excluded")
+
+
+def _credit(anno: dict, existing: dict, user: str | None) -> None:
+    """`done_by` is whoever first finished the segment and never changes; a later change to a
+    finished segment by someone else adds them to `corrected_by`."""
+    for k in ("done_by", "corrected_by", "corrected_at"):
+        if k in existing:
+            anno[k] = existing[k]
+    if not user:
+        return
+    if not anno.get("done_by"):
+        if anno["status"] in FINISHED:
+            anno["done_by"] = user
+        return
+    changed = any(anno.get(k) != existing.get(k) for k in ("text", "meta")) or (
+        anno["status"] in FINISHED and anno["status"] != existing.get("status"))
+    if user != anno["done_by"] and existing.get("status") in FINISHED and changed:
+        anno["corrected_by"] = sorted(set(anno.get("corrected_by", [])) | {user})
+        anno["corrected_at"] = anno["updated_at"]
 
 
 # --- Split a segment at a speaker change (convention rules 8.1 / 8.5) -------------------------
@@ -1239,11 +1265,19 @@ def api_admin_projects():
     out = []
     for p in discover_projects():
         annos = load_annotations(p)
+        # by_user: done segments per transcriber (done_by); corrected_of: how many of those
+        # someone else changed afterwards; corrections: done segments each account corrected.
         by_user: dict[str, int] = {}
+        corrected_of: dict[str, int] = {}
+        corrections: dict[str, int] = {}
         for a in annos.values():
             if isinstance(a, dict) and a.get("status") == "done":
-                who = a.get("updated_by") or ""
+                who = a.get("done_by") or ""
                 by_user[who] = by_user.get(who, 0) + 1
+                if a.get("corrected_by"):
+                    corrected_of[who] = corrected_of.get(who, 0) + 1
+                for c in a.get("corrected_by") or []:
+                    corrections[c] = corrections.get(c, 0) + 1
         n_files, size = _folder_size(p["dir"])
         out.append({
             "name": p["name"],
@@ -1251,6 +1285,8 @@ def api_admin_projects():
             "done": sum(by_user.values()),
             "annotated": len(annos),
             "by_user": by_user,
+            "corrected_of": corrected_of,
+            "corrections": corrections,
             "files": n_files,
             "bytes": size,
             "last_edit": max((a.get("updated_at", "") for a in annos.values() if isinstance(a, dict)), default=None),

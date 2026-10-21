@@ -785,7 +785,9 @@ function select(idx) {
   if (!t) return;
   document.getElementById("metaIdx").textContent =
     `${state.project} · #${idx} · ${state.tasks.indexOf(t) + 1} / ${state.tasks.length}`
-    + (t.updated_by ? ` · last edited by ${t.updated_by}` : "");
+    + (t.done_by ? ` · done by ${t.done_by}` : "")
+    + (t.corrected_by && t.corrected_by.length ? ` · corrected by ${t.corrected_by.join(", ")}` : "")
+    + (t.updated_by && t.updated_by !== t.done_by ? ` · last edited by ${t.updated_by}` : "");
   const dur = t.duration ? t.duration.toFixed(2) + "s" : "—";
   const conf = t.confidence != null ? t.confidence.toFixed(3) : "—";
   const audioUrl = `/audio/${encodeURIComponent(state.project)}/${encodeURIComponent(t.audio)}`;
@@ -1482,6 +1484,8 @@ async function autoSave() {
       taskAt(idx).annotation = text;
       taskAt(idx).status = j.annotation.status;
       taskAt(idx).updated_by = j.annotation.updated_by;
+      taskAt(idx).done_by = j.annotation.done_by;
+      taskAt(idx).corrected_by = j.annotation.corrected_by || [];
       taskAt(idx).meta = j.annotation.meta;
       taskAt(idx).convention = j.annotation.convention;
       document.getElementById("saveStatus").textContent = "✓ auto-saved";
@@ -1536,6 +1540,8 @@ async function save(advance, statusOverride) {
     taskAt(idx).annotation = text;
     taskAt(idx).status = status;
     taskAt(idx).updated_by = j.annotation.updated_by;
+    taskAt(idx).done_by = j.annotation.done_by;
+    taskAt(idx).corrected_by = j.annotation.corrected_by || [];
     taskAt(idx).meta = j.annotation.meta;
     taskAt(idx).convention = j.annotation.convention;
     if (state.conv && j.annotation.meta) {
