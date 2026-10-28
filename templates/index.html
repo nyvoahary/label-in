@@ -1150,13 +1150,13 @@ function learnWords(text) {
 
 // --- PROVA-MG convention: per-segment fields ----------------------------------------------
 // state.meta holds the fields being edited. Fields missing on a segment are pre-filled from the
-// closest earlier segment that has them; language and dialect pre-filled that way stay
-// "à confirmer" (state.unconfirmed) until the transcriber picks or confirms them, since rule 8.4
-// asks to judge them on each segment.
+// closest earlier segment that has them; speaker and dialect pre-filled that way stay
+// "à confirmer" (state.unconfirmed) until the transcriber picks or confirms them, since they can
+// change from one segment to the next. Language, register and quality are taken as they are.
 const FIELD_LABELS = { lang: "la langue", dialect: "le dialecte", register: "le registre",
   quality: "la qualité audio", speaker: "le locuteur" };
 const CARRIED = ["lang", "dialect", "register", "quality", "speaker"];
-const RECHECK = ["lang", "dialect"];
+const RECHECK = ["speaker", "dialect"];
 
 function prepareMeta(t) {
   const own = t.meta || {};
@@ -1168,8 +1168,7 @@ function prepareMeta(t) {
     for (const k of CARRIED) {
       if (!meta[k] && prev[k]) {
         meta[k] = prev[k];
-        // A split is made at a speaker change, so the speaker is re-checked too.
-        if (RECHECK.includes(k) || (k === "speaker" && t.split_of)) state.unconfirmed.add(k);
+        if (RECHECK.includes(k)) state.unconfirmed.add(k);
       }
     }
   }
@@ -1328,7 +1327,7 @@ async function splitSegment(idx) {
       + `Partie 1 (0 – ${at.toFixed(2)} s) : ${short(textA)}\n`
       + `Partie 2 (${at.toFixed(2)} – ${dur.toFixed(2)} s) : ${short(textB)}\n\n`
       + "Le texte est réparti à la position du curseur dans la transcription. "
-      + "Locuteur, langue et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
+      + "Locuteur et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}/split`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ audio: t.audio, at, text_a: textA, text_b: textB }),
