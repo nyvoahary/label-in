@@ -1150,13 +1150,13 @@ function learnWords(text) {
 
 // --- PROVA-MG convention: per-segment fields ----------------------------------------------
 // state.meta holds the fields being edited. Fields missing on a segment are pre-filled from the
-// closest earlier segment that has them; speaker and dialect pre-filled that way stay
+// closest earlier segment that has them; speaker, language and dialect pre-filled that way stay
 // "à confirmer" (state.unconfirmed) until the transcriber picks or confirms them, since they can
-// change from one segment to the next. Language, register and quality are taken as they are.
+// change from one segment to the next. Register and quality are taken as they are.
 const FIELD_LABELS = { lang: "la langue", dialect: "le dialecte", register: "le registre",
   quality: "la qualité audio", speaker: "le locuteur" };
 const CARRIED = ["lang", "dialect", "register", "quality", "speaker"];
-const RECHECK = ["speaker", "dialect"];
+const RECHECK = ["speaker", "lang", "dialect"];
 
 function prepareMeta(t) {
   const own = t.meta || {};
@@ -1203,8 +1203,9 @@ function conventionProblems(text) {
   const missing = Object.keys(FIELD_LABELS).filter(k => !m[k]);
   if (missing.length) out.push("Renseigner " + missing.map(k => FIELD_LABELS[k]).join(", ") + ".");
   const toConfirm = [...state.unconfirmed].filter(k => m[k]);
-  if (toConfirm.length) out.push("Confirmer " + toConfirm.map(k => FIELD_LABELS[k]).join(" et ")
-    + " (repris du segment précédent : à juger sur ce segment).");
+  const names = toConfirm.map(k => FIELD_LABELS[k]);
+  if (names.length) out.push("Confirmer " + (names.length > 1 ? names.slice(0, -1).join(", ") + " et " : "")
+    + names[names.length - 1] + " (repris du segment précédent : à juger sur ce segment).");
   if (m.speaker && !new RegExp(state.conv.speaker_pattern).test(m.speaker))
     out.push("Locuteur : S1, S2… ou S1+S2 pour une région à plusieurs locuteurs.");
   // The other rules (tags, digits, rule 8.5…) are checked by the server, which explains each one.
@@ -1327,7 +1328,7 @@ async function splitSegment(idx) {
       + `Partie 1 (0 – ${at.toFixed(2)} s) : ${short(textA)}\n`
       + `Partie 2 (${at.toFixed(2)} – ${dur.toFixed(2)} s) : ${short(textB)}\n\n`
       + "Le texte est réparti à la position du curseur dans la transcription. "
-      + "Locuteur et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
+      + "Locuteur, langue et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}/split`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ audio: t.audio, at, text_a: textA, text_b: textB }),
