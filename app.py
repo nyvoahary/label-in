@@ -586,25 +586,49 @@ def _save_one(project: dict, idx: int, audio: str, text: str, status: str, meta:
 
 
 FINISHED = ("done", "excluded")
+# Days in the progress report are counted in the team's time zone (Madagascar, UTC+3, no DST).
+LOCAL_TZ = timezone(timedelta(hours=float(os.environ.get("LOCAL_UTC_OFFSET", "3"))))
+
+
+def local_day(iso: str | None) -> str | None:
+    """'2026-10-20T22:30:00+00:00' -> '2026-10-21' in the team's time zone."""
+    try:
+        d = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.astimezone(LOCAL_TZ).date().isoformat()
 
 
 def _credit(anno: dict, existing: dict, user: str | None) -> None:
-    """`done_by` is whoever first finished the segment and never changes; a later change to a
-    finished segment by someone else adds them to `corrected_by`."""
-    for k in ("done_by", "corrected_by", "corrected_at"):
+    """`done_by`/`done_at`: who first finished the segment, and when; they never change. A later
+    change to a finished segment by someone else adds them to `corrected_by` and logs the
+    correction in `corrections` ({by, at}), one entry per corrector and local day."""
+    for k in ("done_by", "done_at", "corrected_by", "corrected_at", "corrections"):
         if k in existing:
             anno[k] = existing[k]
+    if anno.get("done_by") and not anno.get("done_at") and existing.get("updated_at"):
+        # Finished before done_at existed: its last change before this one is the best date known.
+        anno["done_at"] = existing["updated_at"]
     if not user:
         return
     if not anno.get("done_by"):
         if anno["status"] in FINISHED:
-            anno["done_by"] = user
+            anno["done_by"], anno["done_at"] = user, anno["updated_at"]
         return
     changed = any(anno.get(k) != existing.get(k) for k in ("text", "meta")) or (
         anno["status"] in FINISHED and anno["status"] != existing.get("status"))
     if user != anno["done_by"] and existing.get("status") in FINISHED and changed:
         anno["corrected_by"] = sorted(set(anno.get("corrected_by", [])) | {user})
         anno["corrected_at"] = anno["updated_at"]
+        log = list(anno.get("corrections") or [])
+        # Autosave fires while typing: the same person's edits on the same day are one correction.
+        if log and log[-1]["by"] == user and local_day(log[-1]["at"]) == local_day(anno["updated_at"]):
+            log[-1] = {"by": user, "at": anno["updated_at"]}
+        else:
+            log.append({"by": user, "at": anno["updated_at"]})
+        anno["corrections"] = log
 
 
 # --- Split a segment at a speaker change (convention rules 8.1 / 8.5) -------------------------
@@ -1257,6 +1281,74 @@ def api_admin_user_delete(name: str):
 def _folder_size(folder: Path) -> tuple[int, int]:
     files = [p for p in folder.iterdir() if p.is_file()]
     return len(files), sum(p.stat().st_size for p in files)
+
+
+def _day_param(name: str, default: str) -> str:
+    value = request.args.get(name) or default
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        abort(400, f"{name}: date attendue au format AAAA-MM-JJ")
+
+
+@app.route("/api/admin/progress")
+@admin_required
+def api_admin_progress():
+    """Work per local day and account: segments finished (done_by/done_at, with minutes of audio
+    for done ones) and corrections ({by, at} log). ?from=&to= (inclusive), project=, user=,
+    format=csv."""
+    today = datetime.now(LOCAL_TZ).date()
+    start = _day_param("from", (today - timedelta(days=29)).isoformat())
+    end = _day_param("to", today.isoformat())
+    want_project, want_user = request.args.get("project") or None, request.args.get("user") or None
+    rows: dict[tuple[str, str], dict] = {}
+    first_day = None  # earliest activity of all, for the "everything" period
+
+    def row(day: str, user: str) -> dict:
+        return rows.setdefault((day, user), {"day": day, "user": user, "done": 0, "excluded": 0,
+                                             "minutes": 0.0, "corrections": 0})
+
+    projects = discover_projects()
+    for p in projects:
+        if want_project and p["name"] != want_project:
+            continue
+        seconds = {}
+        for t in load_tasks(p):
+            d = t.get("data", {})
+            if isinstance(d.get("start"), (int, float)) and isinstance(d.get("end"), (int, float)):
+                seconds[task_audio(t)] = max(0.0, d["end"] - d["start"])
+        for audio, a in load_annotations(p).items():
+            if not isinstance(a, dict):
+                continue
+            who, day = a.get("done_by"), local_day(a.get("done_at") or a.get("updated_at"))
+            if who and day and a.get("status") in FINISHED:
+                first_day = min(first_day or day, day)
+            if who and day and a.get("status") in FINISHED and start <= day <= end \
+                    and (not want_user or who == want_user):
+                r = row(day, who)
+                if a["status"] == "done":
+                    r["done"] += 1
+                    r["minutes"] += seconds.get(audio, 0.0) / 60
+                else:
+                    r["excluded"] += 1
+            log = a.get("corrections") or [{"by": c, "at": a.get("corrected_at")} for c in a.get("corrected_by") or []]
+            for c in log:
+                cday = local_day(c.get("at"))
+                if cday and start <= cday <= end and (not want_user or c["by"] == want_user):
+                    row(cday, c["by"])["corrections"] += 1
+
+    out = sorted(rows.values(), key=lambda r: (r["day"], r["user"]))
+    for r in out:
+        r["minutes"] = round(r["minutes"], 1)
+    if request.args.get("format") == "csv":
+        lines = ["date,compte,segments_termines,minutes_audio,exclus,corrections"]
+        lines += [f'{r["day"]},{r["user"]},{r["done"]},{r["minutes"]},{r["excluded"]},{r["corrections"]}' for r in out]
+        name = f"progression_{start}_{end}{'_' + want_project if want_project else ''}.csv"
+        return Response("\n".join(lines) + "\n", mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return jsonify({"from": start, "to": end, "first_day": first_day, "rows": out,
+                    "projects": [p["name"] for p in projects],
+                    "users": sorted(_auth_users()), "utc_offset": LOCAL_TZ.utcoffset(None).total_seconds() / 3600})
 
 
 @app.route("/api/admin/projects")

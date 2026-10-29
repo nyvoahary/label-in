@@ -74,6 +74,13 @@
   .bar-fill { height: 100%; background: var(--accent); }
   .bar-fill.full { background: var(--done); }
 
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 140px; padding-top: 6px; overflow-x: auto; }
+  .chart .col { flex: 1 0 10px; min-width: 10px; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+  .chart .bar { background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; }
+  .chart .bar.zero { background: var(--border); }
+  .chart-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+
   @media (max-width: 700px) { .container { padding: 16px; } .toolbar { padding: 10px 16px; } }
 </style>
 </head>
@@ -93,6 +100,7 @@
     <button data-tab="users">Users</button>
     <button data-tab="projects">Projects</button>
     <button data-tab="assign">Assignation</button>
+    <button data-tab="progress">Progression</button>
     <button data-tab="trash">Trash</button>
   </div>
   <div id="tab"></div>
@@ -516,8 +524,121 @@ function renderAssign(msg = "", cls = "ok") {
     run({ action: "history" }, "Assigner chaque segment non assigné au dernier compte qui l'a modifié ?");
 }
 
+// --- Progress ------------------------------------------------------------------------
+// Days are local (Madagascar). A segment counts on the day it was first finished, for whoever
+// finished it; a correction counts on its own day for whoever made it.
+function isoDay(d) { return d.toISOString().slice(0, 10); }  // for UTC-midnight dates of the chart
+function daysBack(n) {  // the viewer's local date, n days ago
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function fmtMinutes(m) { return m >= 60 ? `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, "0")}` : `${Math.round(m)} min`; }
+
+function progressQuery(extra = {}) {
+  const f = state.progressFilter;
+  const q = new URLSearchParams({ from: f.from, to: f.to, ...extra });
+  if (f.project) q.set("project", f.project);
+  if (f.user) q.set("user", f.user);
+  return q.toString();
+}
+
+async function loadProgress() {
+  state.progressFilter = state.progressFilter || { from: daysBack(29), to: daysBack(0), project: "", user: "" };
+  state.progress = await api("GET", "/api/admin/progress?" + progressQuery());
+  if (state.tab === "progress") renderProgress();
+}
+
+function renderProgress() {
+  const p = state.progress, f = state.progressFilter;
+  const users = [...new Set([...p.users, ...p.rows.map(r => r.user)])].sort();
+  // Every day of the period, so quiet days show as gaps in the chart.
+  const days = [];
+  for (let d = new Date(p.from + "T00:00:00Z"); isoDay(d) <= p.to; d.setUTCDate(d.getUTCDate() + 1)) days.push(isoDay(d));
+  const perDay = Object.fromEntries(days.map(d => [d, { done: 0, minutes: 0, by: {} }]));
+  const perUser = {};
+  for (const r of p.rows) {
+    const day = perDay[r.day];
+    if (day) { day.done += r.done; day.minutes += r.minutes; day.by[r.user] = (day.by[r.user] || 0) + r.done; }
+    const u = perUser[r.user] = perUser[r.user] || { done: 0, minutes: 0, excluded: 0, corrections: 0, days: 0 };
+    u.done += r.done; u.minutes += r.minutes; u.excluded += r.excluded; u.corrections += r.corrections;
+    if (r.done || r.excluded || r.corrections) u.days++;
+  }
+  const total = Object.values(perUser).reduce((t, u) => ({ done: t.done + u.done, minutes: t.minutes + u.minutes,
+    excluded: t.excluded + u.excluded, corrections: t.corrections + u.corrections }), { done: 0, minutes: 0, excluded: 0, corrections: 0 });
+  const max = Math.max(1, ...days.map(d => perDay[d].done));
+  const bars = days.map(d => {
+    const v = perDay[d], who = Object.entries(v.by).filter(([, n]) => n).map(([u, n]) => `${u} ${n}`).join(", ");
+    return `<div class="col" title="${esc(d)} : ${v.done} segment${v.done > 1 ? "s" : ""}, ${fmtMinutes(v.minutes)}${who ? " (" + esc(who) + ")" : ""}">
+      <div class="bar ${v.done ? "" : "zero"}" style="height:${v.done ? Math.max(2, v.done / max * 100) : 1}%"></div></div>`;
+  }).join("");
+  const userRows = Object.entries(perUser).sort((a, b) => b[1].done - a[1].done).map(([u, v]) => `<tr>
+      <td><b>${esc(u)}</b></td><td class="num">${v.done}</td><td class="num">${fmtMinutes(v.minutes)}</td>
+      <td class="num">${v.excluded}</td><td class="num">${v.corrections}</td><td class="num">${v.days}</td></tr>`).join("");
+  const dayRows = [...p.rows].reverse().map(r => `<tr>
+      <td>${esc(r.day)}</td><td><b>${esc(r.user)}</b></td><td class="num">${r.done}</td><td class="num">${fmtMinutes(r.minutes)}</td>
+      <td class="num">${r.excluded}</td><td class="num">${r.corrections}</td></tr>`).join("");
+
+  document.getElementById("tab").innerHTML = `
+    <div class="panel">
+      <h2>Progression <span class="spacer"></span>
+        <a class="btn small" href="/api/admin/progress?${esc(progressQuery({ format: "csv" }))}" download>Télécharger CSV</a></h2>
+      <div class="form-row" style="margin-bottom:8px">
+        <label class="muted" style="font-size:12px">Du</label><input type="date" id="pgFrom" value="${esc(p.from)}">
+        <label class="muted" style="font-size:12px">au</label><input type="date" id="pgTo" value="${esc(p.to)}">
+        <button class="btn small" data-range="6">7 jours</button>
+        <button class="btn small" data-range="29">30 jours</button>
+        <button class="btn small" data-range="month">Ce mois</button>
+        <button class="btn small" data-range="all">Tout</button>
+      </div>
+      <div class="form-row">
+        <select id="pgProject"><option value="">Tous les projets</option>
+          ${p.projects.map(n => `<option ${n === f.project ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+        <select id="pgUser"><option value="">Tous les comptes</option>
+          ${users.map(n => `<option ${n === f.user ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      </div>
+      <p class="hint" style="margin-top:12px">Un segment compte le jour où il a été terminé pour la première fois, pour la personne
+        qui l'a terminé. Une correction compte le jour où elle a été faite, pour la personne qui l'a faite (une par segment et par jour).
+        Jours à l'heure de Madagascar.</p>
+    </div>
+    <div class="panel">
+      <h2>Sur la période <span class="muted">${esc(p.from)} → ${esc(p.to)}</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Compte</th><th class="num">Segments terminés</th><th class="num">Audio</th><th class="num">Exclus</th>
+          <th class="num">Corrections</th><th class="num">Jours actifs</th></tr></thead>
+        <tbody>${userRows || `<tr><td colspan="6" class="muted">Aucune activité sur cette période.</td></tr>`}
+          ${userRows ? `<tr><td><b>Total</b></td><td class="num"><b>${total.done}</b></td><td class="num"><b>${fmtMinutes(total.minutes)}</b></td>
+            <td class="num">${total.excluded}</td><td class="num">${total.corrections}</td><td></td></tr>` : ""}</tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Segments terminés par jour <span class="muted">(max ${max})</span></h2>
+      <div class="chart">${bars}</div>
+      <div class="chart-axis"><span>${esc(days[0] || "")}</span><span>${esc(days[days.length - 1] || "")}</span></div>
+    </div>
+    <div class="panel">
+      <h2>Détail par jour</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Compte</th><th class="num">Segments</th><th class="num">Audio</th><th class="num">Exclus</th>
+          <th class="num">Corrections</th></tr></thead>
+        <tbody>${dayRows || `<tr><td colspan="6" class="muted">—</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+
+  const reload = () => loadProgress().catch(err => alert(err.message));
+  document.getElementById("pgFrom").onchange = e => { f.from = e.target.value || f.from; reload(); };
+  document.getElementById("pgTo").onchange = e => { f.to = e.target.value || f.to; reload(); };
+  document.getElementById("pgProject").onchange = e => { f.project = e.target.value; reload(); };
+  document.getElementById("pgUser").onchange = e => { f.user = e.target.value; reload(); };
+  document.querySelectorAll("[data-range]").forEach(b => b.onclick = () => {
+    const r = b.dataset.range;
+    f.to = daysBack(0);
+    f.from = r === "month" ? f.to.slice(0, 8) + "01" : r === "all" ? (p.first_day || f.to) : daysBack(+r);
+    reload();
+  });
+}
+
 // --- Tabs --------------------------------------------------------------------------
-const loaders = { users: loadUsers, projects: loadProjects, trash: loadTrash, assign: loadAssign };
+const loaders = { users: loadUsers, projects: loadProjects, trash: loadTrash, assign: loadAssign, progress: loadProgress };
 function showTab(tab) {
   state.tab = tab;
   state.editing = null;
