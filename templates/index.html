@@ -93,6 +93,8 @@
   .conv .confirm { background: var(--panel-2); color: var(--accent); border: 1px solid var(--accent); border-radius: 5px;
     padding: 4px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
   .conv .field:not(.unconfirmed) .confirm { display: none; }
+  .conv .speaker-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .conv .speaker-note:empty { display: none; }
   .conv .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
   .conv .checks label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
   .conv .exclu { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 2px; }
@@ -934,6 +936,7 @@ function select(idx) {
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
     normalizeHesitations(ta);
+    if (syncSpeakers()) refreshConventionPanel();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
@@ -1165,12 +1168,18 @@ function prepareMeta(t) {
     for (const k of CARRIED) {
       if (!meta[k] && prev[k]) {
         meta[k] = prev[k];
+        // After a multi-speaker segment (S1+S2), the next one starts with whoever spoke last.
+        if (k === "speaker" && prev[k].includes("+"))
+          meta[k] = lastTagSpeaker(taskAt(i).annotation) || prev[k].split("+")[0];
         if (RECHECK.includes(k)) state.unconfirmed.add(k);
       }
     }
   }
   state.meta = meta;
   state.excluded = t.status === "excluded";
+  const tags = speakerTags(t.annotation);
+  state.tagSpeaker = tags.length >= 2 && meta.speaker === tags.join("+");
+  state.speakerBeforeTags = null;
 }
 
 // Fields as they will be saved: values still "à confirmer" are left out.
@@ -1246,7 +1255,8 @@ function conventionPanelHtml(t) {
         ${field("dialect", "Dialecte *", seg("dialect", c.dialects), "wide")}
         ${field("speaker", "Locuteur *", seg("speaker", speakerChoices(c.used_speakers, m.speaker))
           + `<input type="text" id="convSpeaker" value="${escapeHtml(m.speaker || "")}" placeholder="autre : S1+S2…"
-               autocomplete="off" title="Saisir un autre locuteur (ex. S1+S2)" style="width:120px;margin-top:4px">`)}
+               autocomplete="off" title="Saisir un autre locuteur (ex. S1+S2)" style="width:120px;margin-top:4px">
+             <div class="speaker-note" id="speakerNote"></div>`)}
         ${field("flags", "Indicateurs", `<div class="checks">${c.flags.map(f =>
           `<label><input type="checkbox" data-flag="${escapeHtml(f)}" ${m.flags.includes(f) ? "checked" : ""}> ${escapeHtml(f)}</label>`).join("")}</div>`, "wide")}
         <div class="field wide keep exclu">
@@ -1271,6 +1281,8 @@ function refreshConventionPanel() {
     b.classList.toggle("on", state.meta[b.dataset.set] === b.dataset.value));
   const sp = document.getElementById("convSpeaker");
   if (sp && document.activeElement !== sp) sp.value = state.meta.speaker || "";
+  const note = document.getElementById("speakerNote");
+  if (note) note.textContent = state.tagSpeaker ? `Suit les balises du texte (règle 8.5)` : "";
   document.getElementById("convReason").disabled = !state.excluded;
   const btn = document.getElementById("saveBtn");
   btn.textContent = state.excluded ? "Exclure & Next" : "Save & Next";
@@ -1279,6 +1291,7 @@ function refreshConventionPanel() {
 
 function conventionChanged(key) {
   if (key) state.unconfirmed.delete(key);
+  syncSpeakers();
   document.getElementById("convErrors").textContent = "";
   document.querySelectorAll(".conv .field.missing").forEach(f => f.classList.remove("missing"));
   refreshConventionPanel();
@@ -1297,6 +1310,7 @@ function wireConventionPanel() {
   });
   const speaker = document.getElementById("convSpeaker");
   speaker.oninput = () => { state.meta.speaker = speaker.value.trim().toUpperCase().replace(/\s+/g, ""); conventionChanged("speaker"); };
+  speaker.onblur = () => refreshConventionPanel();  // shows the value the text's tags may have imposed
   panel.querySelectorAll("[data-flag]").forEach(cb => cb.onchange = () => {
     state.meta.flags = [...panel.querySelectorAll("[data-flag]:checked")].map(x => x.dataset.flag);
     conventionChanged();
@@ -1392,11 +1406,57 @@ function insertTag(tag) {
 }
 
 function toggleFlag(flag, on) {
+  setFlag(flag, on);
+  conventionChanged();
+}
+
+function setFlag(flag, on) {
   const flags = new Set(state.meta.flags);
   on ? flags.add(flag) : flags.delete(flag);
   state.meta.flags = (state.conv?.flags || []).filter(f => flags.has(f));
   document.querySelectorAll("#conv [data-flag]").forEach(cb => { cb.checked = flags.has(cb.dataset.flag); });
-  conventionChanged();
+}
+
+// --- Rule 8.5 kept in step ----------------------------------------------------------------
+// [S1] … [S2] tags in the text set the speaker (S1+S2) and win over a click on one speaker;
+// removing tags brings the speaker back to the one left. A speaker with "+" ticks
+// "plusieurs locuteurs"; a single speaker with no tag in the text unticks it.
+const FLAG_MULTI = "plusieurs locuteurs";
+const speakerNum = s => parseInt(s.slice(1), 10);
+
+function speakerTags(text) {
+  const ids = new Set([...(text || "").matchAll(/\[(S\d+)\]/g)].map(m => m[1]));
+  return [...ids].sort((a, b) => speakerNum(a) - speakerNum(b));
+}
+
+// The speaker who talks last in a text with speaker tags ("[S1] … [S2] … [S1] …" -> S1).
+function lastTagSpeaker(text) {
+  const all = [...(text || "").matchAll(/\[(S\d+)\]/g)];
+  return all.length ? all[all.length - 1][1] : null;
+}
+
+// Brings speaker and flag in line with the text; returns true when it changed something.
+function syncSpeakers() {
+  if (!state.conv || state.excluded) return false;
+  const ta = document.getElementById("annotation");
+  const tags = speakerTags(ta ? ta.value : "");
+  const m = state.meta, before = m.speaker, hadFlag = m.flags.includes(FLAG_MULTI);
+  if (tags.length >= 2) {
+    if (!state.tagSpeaker) state.speakerBeforeTags = m.speaker;
+    m.speaker = tags.join("+");
+    state.tagSpeaker = true;
+  } else if (state.tagSpeaker) {
+    // Tags were removed: back to the one left, or to the speaker chosen before the tags.
+    const back = (state.speakerBeforeTags || "").includes("+") ? null : state.speakerBeforeTags;
+    m.speaker = tags[0] || back || (m.speaker || "").split("+")[0];
+    if (!tags.length) state.tagSpeaker = false;
+  }
+  if (m.speaker !== before) state.unconfirmed.delete("speaker");
+  if (state.conv.flags.includes(FLAG_MULTI)) {
+    if ((m.speaker || "").includes("+") || tags.length >= 2) setFlag(FLAG_MULTI, true);
+    else if (!tags.length && m.speaker) setFlag(FLAG_MULTI, false);
+  }
+  return m.speaker !== before || m.flags.includes(FLAG_MULTI) !== hadFlag;
 }
 
 // --- Live checks --------------------------------------------------------------------------
