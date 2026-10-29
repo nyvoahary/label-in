@@ -394,6 +394,21 @@ Si les voix se superposent au point d'être incompréhensibles : région *Exclu*
 
 > **Remarque.** Les balises `[S1]`, `[S2]` ne doivent jamais arriver dans les données d'entraînement : le modèle apprendrait à les écrire. Ces segments sont donc **exclus de l'entraînement par défaut** et gardés pour un test de robustesse multi-locuteurs. C'est pourquoi on n'utilise cette solution qu'en dernier recours.
 
+#### Dans l'éditeur Label-in
+
+Les balises du texte remplissent le champ Locuteur et l'indicateur à votre place. On insère les balises avec les boutons `[S1]` `[S2]` `[S3]` au-dessus de la transcription (ou en les tapant).
+
+| Ce que vous faites | Transcription | Locuteur | *plusieurs locuteurs* |
+|---|---|---|---|
+| Bouton `[S1]`, puis on écrit | `[S1] Ho avy ve ianao?` | `S1` (à confirmer) | non coché |
+| Bouton `[S2]`, puis on écrit | `… [S2] Eny.` | `S1+S2`, confirmé | **coché automatiquement** |
+| Bouton `[S1]` à nouveau | `… [S1] Rahoviana?` | `S1+S2` | coché |
+| On supprime `[S2]` (c'était la même voix) | `[S1] Ho avy ve ianao? Eny. [S1] Rahoviana?` | `S1` | coché (une balise reste) |
+| On supprime aussi les `[S1]` | `Ho avy ve ianao? Eny. Rahoviana?` | `S1` | **décoché automatiquement** |
+
+- **Les balises ont le dernier mot.** Si le texte contient `[S1]` et `[S2]` et qu'on clique sur le bouton `S1` du champ Locuteur, le champ revient à `S1+S2`. Pour revenir à un seul locuteur, on retire les balises du texte. Une petite note sous le champ l'indique : *Suit les balises du texte (règle 8.5)*.
+- **Segment suivant.** Il reprend la **dernière personne qui a parlé**, pas `S1+S2`. Si le segment se termine par `[S1] Rahoviana?`, le suivant s'ouvre avec le locuteur `S1`, à confirmer.
+
 ### 8.6 Pause sans changement de locuteur
 
 Une pause seule n'oblige pas à couper. On coupe seulement si une raison l'impose.
@@ -428,6 +443,23 @@ On coupe une fois, vers 25 à 30 s, sur la pause qui tombe en fin de phrase. Pas
 ---
 
 ## 9. Paramètres par segment
+
+#### Dans l'éditeur Label-in : champs repris du segment précédent
+
+À l'ouverture d'un segment, l'éditeur pré-remplit les champs avec ceux du segment précédent. Trois d'entre eux changent souvent d'un segment à l'autre : ils restent en **jaune, « à confirmer »**, et le segment ne peut pas être validé tant qu'on ne les a pas vérifiés.
+
+| Champ | Repris du segment précédent | À confirmer (jaune) |
+|---|---|---|
+| Locuteur | oui | **oui** |
+| Langue | oui | **oui** |
+| Dialecte | oui | **oui** |
+| Registre | oui | non |
+| Qualité audio | oui | non |
+| Indicateurs | non | — |
+
+Pour confirmer, on clique sur la valeur déjà sélectionnée si elle est juste, ou on en choisit une autre.
+
+**Exemple.** Le segment #12 était `mixte`, `officiel (merina standard)`, `spontané`, `propre`, `S1`. Le #13 s'ouvre avec les mêmes valeurs ; Locuteur, Langue et Dialecte sont en jaune. On écoute : c'est toujours S1, mais il parle uniquement malgache. On clique `S1`, `mg`, puis `officiel (merina standard)`. Registre et Qualité audio restent tels quels.
 
 ### Langue (obligatoire)
 
@@ -474,6 +506,8 @@ Identifiant par source. Exemple dans une vidéo de culte : `S1` = pasteur, `S2` 
 
 > **Remarque.** Ce champ empêche qu'une même voix se retrouve à la fois dans les données d'entraînement et dans le test. Sinon le modèle paraît meilleur qu'il ne l'est.
 
+Dans l'éditeur, le champ propose un bouton par locuteur déjà utilisé dans le projet, plus un bouton pour le **locuteur suivant**. Exemple : si le projet a déjà `S1` et `S2`, les boutons sont `S1` `S2` `S3`. Quand une nouvelle voix apparaît, on clique `S3` ; au segment suivant, `S4` sera proposé à son tour. Pour une valeur qui n'a pas de bouton (ex. `S1+S2` sans balises, ou `S4` avant `S3`), on la tape dans la petite case sous les boutons. Avec un `+`, l'indicateur *plusieurs locuteurs* se coche tout seul ; en revenant à un seul locuteur (sans balises dans le texte), il se décoche.
+
 ### Indicateurs (facultatifs, plusieurs possibles)
 
 | Indicateur | Quand le cocher | Exemple |
@@ -482,7 +516,7 @@ Identifiant par source. Exemple dans une vidéo de culte : `S1` = pasteur, `S2` 
 | transcription incertaine | Au moins un `((mot))` dans le segment | `((Ambohimanarina))` |
 | nom propre à vérifier | Nom de lieu ou de personne douteux | `((Andrianampoinimerina))` |
 | emprunt ambigu | Cas de la règle 3.6 | `boaty` / `boîte` |
-| plusieurs locuteurs | Région inséparable avec balises (cas 8.5) | `[S1] Rahoviana? [S2] Rahampitso.` |
+| plusieurs locuteurs | Région inséparable avec balises (cas 8.5). Coché automatiquement par l'éditeur dès qu'il y a deux balises de locuteur ou un `+` dans le champ Locuteur. | `[S1] Rahoviana? [S2] Rahampitso.` |
 | données personnelles | Au moins un `[personnel]` dans le segment (règle 6.1) | `Ny laharako dia [personnel].` |
 
 ### Région Exclu : raisons
@@ -521,10 +555,13 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
+  - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
 
 Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la convention. À consulter avant de cocher *emprunt ambigu* : la réponse y est peut-être déjà.
+
+Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniquement des segments **validés** (statut *done*), tous projets confondus, plus les listes de mots malgaches, français et anglais. Les brouillons et les segments en relecture n'y entrent pas. Si un segment validé est corrigé ou rouvert, ses anciens mots disparaissent des suggestions. Les mots gardent leur tiret et leur apostrophe (`an-tsena`, `afak'omaly`) ; les balises (`[euh]`), les faux départs (`mand-`), les chiffres et l'apostrophe typographique ’ sont écartés.
 
 ---
 
