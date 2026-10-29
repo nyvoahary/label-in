@@ -1023,18 +1023,28 @@ function scrollSidebarToCurrent() {
   if (el) el.scrollIntoView({ block: "nearest" });
 }
 
-// Builds the deduplicated word pool for autocomplete from existing annotations, learned words, and word lists.
+// Words of a transcription as autocomplete entries, like vocab_words() on the server: tags,
+// false starts (mand-), digits and curly quotes are skipped; inner - and ' are kept (an-tsena).
+function vocabWords(text) {
+  const out = [];
+  for (const tok of (text || "").replace(/\[[^\]]*\]/g, " ").split(/[\s"«»“”.,!?;:()\[\]{}…–—\/]+/)) {
+    if (/[\d’‘]/.test(tok)) continue;
+    const w = tok.replace(/^'+|'+$/g, "").toLowerCase();
+    if (w.length > 1 && !w.startsWith("-") && !w.endsWith("-")) out.push(w);
+  }
+  return out;
+}
+
+// Builds the deduplicated word pool for autocomplete: words of done segments (this project, then
+// all projects from the server), then the language word lists. Drafts never feed it.
 function getSuggestionWords() {
   const idx = state.current;
   const seen = new Set();
   const words = [];
   for (let i = 0; i < state.tasks.length; i++) {
-    if (i === idx) continue;
-    const text = state.tasks[i].annotation || "";
-    if (!text) continue;
-    for (const w of text.split(/\s+/)) {
-      const clean = w.replace(/["""''.,!?;:()\[\]{}\-–—]/g, "").toLowerCase();
-      if (clean.length > 1 && !seen.has(clean)) { seen.add(clean); words.push(clean); }
+    if (i === idx || state.tasks[i].status !== "done") continue;
+    for (const w of vocabWords(state.tasks[i].annotation)) {
+      if (!seen.has(w)) { seen.add(w); words.push(w); }
     }
   }
   for (const w of state.learnedWords) {
@@ -1127,25 +1137,12 @@ function closeSuggestions() {
   if (box) { box.style.display = "none"; box.innerHTML = ""; }
 }
 
-// Extracts new words from a saved annotation and persists them to the server's learned-words store.
+// Adds the words of a segment just marked done to this page's list. The server rebuilds its own
+// list from done segments, so nothing is sent.
 function learnWords(text) {
-  if (!text) return;
-  const newWords = [];
-  const existingSet = new Set(state.learnedWords);
-  for (const w of text.split(/\s+/)) {
-    const clean = w.replace(/["""''.,!?;:()\[\]{}\-–—]/g, "").toLowerCase();
-    if (clean.length > 1 && !existingSet.has(clean)) {
-      existingSet.add(clean);
-      newWords.push(clean);
-    }
-  }
-  if (!newWords.length) return;
-  state.learnedWords = [...state.learnedWords, ...newWords];
-  fetch("/api/learned-words", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ words: newWords }),
-  }).catch(() => {});
+  const known = new Set(state.learnedWords);
+  const newWords = vocabWords(text).filter(w => !known.has(w) && known.add(w));
+  if (newWords.length) state.learnedWords = [...state.learnedWords, ...newWords];
 }
 
 // --- PROVA-MG convention: per-segment fields ----------------------------------------------

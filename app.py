@@ -1542,23 +1542,49 @@ def api_take(name: str):
 # Override with LEARNED_WORDS_FILE to keep the list on persistent storage (e.g. in Docker).
 LEARNED_WORDS_FILE = Path(os.environ.get("LEARNED_WORDS_FILE", ROOT / "static" / "learned_words.json"))
 
+_TAG_RE = re.compile(r"\[[^\]]*\]")
+_WORD_SPLIT_RE = re.compile(r"[\s\"«»“”.,!?;:()\[\]{}…–—/]+")
+_learned_cache: dict = {"key": None, "words": []}
+
+
+def vocab_words(text: str) -> set[str]:
+    """Words of a transcription as autocomplete entries: tags ([euh]…), false starts (mand-),
+    tokens with digits or forbidden characters are skipped; inner hyphens and apostrophes are
+    kept (an-tsena, afak'omaly)."""
+    out = set()
+    for tok in _WORD_SPLIT_RE.split(_TAG_RE.sub(" ", text)):
+        if any(ch.isdigit() for ch in tok) or any(ch in tok for ch in convention.FORBIDDEN_CHARS):
+            continue
+        w = tok.strip("'").lower()
+        if len(w) > 1 and not w.startswith("-") and not w.endswith("-"):
+            out.add(w)
+    return out
+
+
+def learned_words() -> list[str]:
+    """Words of every done segment in every project, rebuilt when an annotations file changes,
+    so a segment that is corrected or reopened no longer feeds the suggestions."""
+    projects = discover_projects()
+    key = tuple((str(p["annotations_file"]), p["annotations_file"].stat().st_mtime)
+                for p in projects if p["annotations_file"].exists())
+    if _learned_cache["key"] != key:
+        words: set[str] = set()
+        for p in projects:
+            for a in load_annotations(p).values():
+                if isinstance(a, dict) and a.get("status") == "done":
+                    words |= vocab_words(a.get("text") or "")
+        _learned_cache.update(key=key, words=sorted(words))
+    return _learned_cache["words"]
+
+
 @app.route("/api/learned-words", methods=["GET"])
 def get_learned_words():
-    if LEARNED_WORDS_FILE.exists():
-        return jsonify(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")))
-    return jsonify([])
+    return jsonify(learned_words())
 
 @app.route("/api/learned-words", methods=["POST"])
 def add_learned_words():
-    new_words = request.json.get("words", [])
-    if not new_words:
-        return jsonify({"added": 0})
-    existing = set(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")) if LEARNED_WORDS_FILE.exists() else [])
-    added = [w for w in new_words if w not in existing]
-    if added:
-        existing.update(added)
-        LEARNED_WORDS_FILE.write_text(json.dumps(sorted(existing), ensure_ascii=False), "utf-8")
-    return jsonify({"added": len(added), "total": len(existing)})
+    # Kept for editors loaded before this change: the list now comes from done segments only.
+    return jsonify({"added": 0, "total": len(learned_words())})
 
 
 @app.route("/audio/<name>/<path:filename>")
@@ -1569,27 +1595,10 @@ def serve_audio(name: str, filename: str):
 
 
 def seed_learned_words():
-    """Merge all annotation words into learned_words.json on every startup."""
-    import re
-    existing = set(json.loads(LEARNED_WORDS_FILE.read_text("utf-8")) if LEARNED_WORDS_FILE.exists() else [])
-    before = len(existing)
-    for project in discover_projects():
-        ann_file = project["dir"] / "annotations.json"
-        if not ann_file.exists():
-            continue
-        data = json.loads(ann_file.read_text("utf-8"))
-        for task in data.values():
-            if not isinstance(task, dict) or task.get("status") != "done":
-                continue
-            text = task.get("text", "")
-            if not text:
-                continue
-            for w in text.split():
-                clean = re.sub(r"[\"\"''.,!?;:()\[\]{}\-–—]", "", w).lower()
-                if len(clean) > 1:
-                    existing.add(clean)
-    LEARNED_WORDS_FILE.write_text(json.dumps(sorted(existing), ensure_ascii=False), "utf-8")
-    print(f"learned_words.json: {len(existing)} words (+{len(existing) - before} new from annotations).")
+    """Rewrite learned_words.json (a snapshot for other tools) from the done segments."""
+    words = learned_words()
+    LEARNED_WORDS_FILE.write_text(json.dumps(words, ensure_ascii=False), "utf-8")
+    print(f"learned_words.json: {len(words)} words from done segments.")
 
 
 if __name__ == "__main__":
