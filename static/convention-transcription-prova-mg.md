@@ -36,6 +36,42 @@ On écrit **ce qui est dit**, pas ce qui aurait dû être dit. On ne corrige ni 
 
 > **Remarque.** Le modèle doit apprendre la parole réelle. Si on "nettoie" la transcription, le modèle apprend à entendre des mots qui n'ont pas été prononcés, et il sera pénalisé en évaluation sur de la parole spontanée.
 
+### 1.1 Particules de discours (a, e, ange, anie, koa…)
+
+Les petites particules qui demandent une confirmation, insistent ou accompagnent un appel **sont des mots** : on les écrit. Elles s'écrivent en minuscules, comme un mot séparé, **sans h à la fin** (aucun mot malgache ne se termine par *h* ; `ah`, `eh` sont des graphies françaises ou anglaises) et sans accent (`à` n'est pas malgache).
+
+| Dit | Correct | Incorrect |
+|---|---|---|
+| *a* qui demande la confirmation | `Izao a, rehefa …` | `Izao, rehefa …` / `Izao ah, rehefa …` / `Izao à, …` |
+| *a* qui demande la confirmation | `Ilay izy a, ataoko fambola miandry` | `Ilay izy, ataoko fambola miandry` |
+| *a* en fin de question | `Tsara a?` | `Tsara ah?` |
+| *e* qui renforce un appel | `Henoy ange e, misy zavatra tantaraiko anareo ity.` | `Henoy ange eh, …` / `Henoy ange, …` |
+| Appel seul | `Ry namana e!` | `Ry namana eh!` |
+
+Ponctuation : une virgule après la particule quand elle clôt un appel ou une demande avant la suite de la phrase ; `?` ou `!` si elle termine la phrase.
+
+**Particule ou hésitation ?**
+
+| Ce qu'on entend | On écrit |
+|---|---|
+| Un *a* ou *e* court, collé au mot d'avant, avec une intention (demande, insistance, appel) | La particule : `a`, `e` |
+| Un son sans sens pendant que le locuteur cherche la suite (*euh*, *eh*, *aaa…*) | `[euh]` (règle 6) |
+
+> **Remarque.** Whisper oublie souvent ces particules courtes (*a*, *e*, *anie*, *ange*, *koa*). Les écouter et les rajouter si le brouillon les a supprimées.
+
+### 1.2 Son allongé
+
+Un son étiré ne change pas l'orthographe du mot : on écrit le mot **une seule fois, avec son orthographe normale**, sans répéter de lettres. La durée est déjà dans l'audio.
+
+| Dit | Correct | Incorrect |
+|---|---|---|
+| *"Ohatra hoeeee"*, simplement étiré | `Ohatra hoe` | `Ohatra hoeeee` |
+| *"Ohatra hoeeee…"*, le locuteur tient le son en cherchant la suite | `Ohatra hoe [euh]` | `Ohatra hoeeee…` |
+| *"Izao aaa, rehefa…"*, particule étirée | `Izao a, rehefa …` | `Izao aaa, rehefa …` |
+| *"Henoy ange eeee, …"*, particule étirée | `Henoy ange e, …` | `Henoy ange eeee, …` |
+
+> **Remarque.** Si on écrivait `hoe`, `hoeee` et `hoeeeee`, le modèle verrait trois orthographes pour un seul mot : son vocabulaire s'émiette et ses scores baissent.
+
 ---
 
 ## 2. Orthographe malgache
@@ -555,6 +591,7 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), son allongé écrit une seule fois (1.2).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
@@ -570,6 +607,8 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 | Question | Réponse |
 |---|---|
 | Le locuteur se répète ? | On garde. |
+| Particule *a*, *e*, *ange* (« Izao a, … ») ? | On l'écrit : `a`, `e`, sans *h* (règle 1.1). |
+| Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
 | Mot dialectal ? | On garde, on coche le dialecte. |
 | Mot français prononcé à la française ? | Orthographe française avec accents. |
 | Mot français prononcé à la malgache ? | Orthographe malgache. |
