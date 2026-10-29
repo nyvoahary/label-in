@@ -1212,6 +1212,19 @@ function conventionProblems(text) {
   return out;
 }
 
+// Speaker buttons: the speakers already used in the project (and the current value), then the
+// next new one. Clicking the pre-filled speaker confirms it without retyping.
+function speakerChoices(used, current) {
+  const set = new Set([...(used || []), ...(current ? [current] : [])]);
+  const nums = [...set].flatMap(s => (s.match(/\d+/g) || []).map(Number));
+  set.add("S" + (nums.length ? Math.max(...nums) + 1 : 1));
+  const order = s => s.split("+").map(p => parseInt(p.slice(1), 10) || 0);
+  return [...set].sort((a, b) => {
+    const x = order(a), y = order(b);
+    return x.length - y.length || x.reduce((d, v, i) => d || v - y[i], 0);
+  });
+}
+
 function conventionPanelHtml(t) {
   prepareMeta(t);
   const c = state.conv;
@@ -1234,8 +1247,9 @@ function conventionPanelHtml(t) {
         ${field("register", "Registre *", seg("register", c.registers))}
         ${field("quality", "Qualité audio *", seg("quality", c.qualities))}
         ${field("dialect", "Dialecte *", seg("dialect", c.dialects), "wide")}
-        ${field("speaker", "Locuteur *", `<input type="text" id="convSpeaker" list="convSpeakers" value="${escapeHtml(m.speaker || "")}" placeholder="S1, ou S1+S2" autocomplete="off" style="width:140px">
-          <datalist id="convSpeakers">${c.used_speakers.map(s => `<option value="${escapeHtml(s)}">`).join("")}</datalist>`)}
+        ${field("speaker", "Locuteur *", seg("speaker", speakerChoices(c.used_speakers, m.speaker))
+          + `<input type="text" id="convSpeaker" value="${escapeHtml(m.speaker || "")}" placeholder="autre : S1+S2…"
+               autocomplete="off" title="Saisir un autre locuteur (ex. S1+S2)" style="width:120px;margin-top:4px">`)}
         ${field("flags", "Indicateurs", `<div class="checks">${c.flags.map(f =>
           `<label><input type="checkbox" data-flag="${escapeHtml(f)}" ${m.flags.includes(f) ? "checked" : ""}> ${escapeHtml(f)}</label>`).join("")}</div>`, "wide")}
         <div class="field wide keep exclu">
@@ -1258,6 +1272,8 @@ function refreshConventionPanel() {
     f.classList.toggle("unconfirmed", state.unconfirmed.has(f.dataset.field)));
   panel.querySelectorAll("[data-set]").forEach(b =>
     b.classList.toggle("on", state.meta[b.dataset.set] === b.dataset.value));
+  const sp = document.getElementById("convSpeaker");
+  if (sp && document.activeElement !== sp) sp.value = state.meta.speaker || "";
   document.getElementById("convReason").disabled = !state.excluded;
   const btn = document.getElementById("saveBtn");
   btn.textContent = state.excluded ? "Exclure & Next" : "Save & Next";
