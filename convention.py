@@ -170,7 +170,8 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
     after_stop = sorted(set(m.group(1) for m in re.finditer(r"[.?]\s+(\w+)", plain) if m.group(1)[0].islower()))
     if after_stop:
         out.append(_issue(f"Après un point ou un ?, la phrase suivante prend une majuscule : {', '.join(after_stop[:5])} (règle 5.1)."))
-    for word in sorted(set(m.group(0) for m in re.finditer(r"\b(\w+)-(\1)\b", plain, re.I))):
+    # Two letters or more: "a-a-a" (no) is a word of its own (rule 1.1), not a reduplication.
+    for word in sorted(set(m.group(0) for m in re.finditer(r"\b(\w{2,})-(\1)\b", plain, re.I))):
         joined = word.replace("-", "")
         out.append(_issue(f"Redoublement « {word} » : un seul mot, sans tiret ({joined}) (règle 2).",
                           {"type": "replace", "from": word, "to": joined, "label": f"Écrire {joined}"}))

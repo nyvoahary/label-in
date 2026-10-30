@@ -59,6 +59,27 @@ Ponctuation : une virgule après la particule quand elle clôt un appel ou une d
 
 > **Remarque.** Whisper oublie souvent ces particules courtes (*a*, *e*, *anie*, *ange*, *koa*). Les écouter et les rajouter si le brouillon les a supprimées.
 
+**Oui et non sans mot : `a-an` et `a-a-a`**
+
+Les sons qui veulent dire *oui* ou *non* sont des mots : on les écrit, avec des tirets, toujours de la même façon.
+
+| Sens | Ce qu'on entend | On écrit |
+|---|---|---|
+| **non** | *a-a-a* : des coups séparés par un petit arrêt, sans nasale à la fin (parfois seulement deux) | `a-a-a` |
+| **oui, d'accord** | *a-an* : finit sur un son nasal, souvent montant | `a-an` |
+
+- **On ne compte pas les coups.** Deux ou trois, le *non* s'écrit toujours `a-a-a` (même logique que la règle 1.2 : l'audio porte la façon de dire, le texte porte le mot).
+- **Doute entre oui et non :** `((a-an))` ou `((a-a-a))` et l'indicateur *transcription incertaine*.
+- **Ne pas confondre** avec la particule `a` (demande de confirmation), ni avec un *aaa…* sans sens pendant qu'on cherche ses mots : `[euh]`.
+
+| Dit | Correct | Incorrect |
+|---|---|---|
+| *"Aaa, tsy izany"* (non) | `A-a-a, tsy izany no nolazaiko.` | `Aaa, …` / `A-a, …` / `Ahaha, …` |
+| *"Aan, marina izany"* (oui) | `A-an, marina izany.` | `Ahan, …` / `Aan, …` |
+| Échange rapide | `[S1] Tonga ve izy? [S2] A-an.` (règle 8.5) | |
+
+> **Remarque.** Un `a-an` ou `a-a-a` isolé de l'interlocuteur, pendant que l'autre continue de parler, suit la règle du *"Eny"* isolé (8.2) : pas de segment à part, et on ne l'écrit pas dans le segment du locuteur principal.
+
 ### 1.2 Son allongé
 
 Un son étiré ne change pas l'orthographe du mot : on écrit le mot **une seule fois, avec son orthographe normale**, sans répéter de lettres. La durée est déjà dans l'audio.
@@ -591,7 +612,7 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
-  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), son allongé écrit une seule fois (1.2).
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
@@ -608,6 +629,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 |---|---|
 | Le locuteur se répète ? | On garde. |
 | Particule *a*, *e*, *ange* (« Izao a, … ») ? | On l'écrit : `a`, `e`, sans *h* (règle 1.1). |
+| *Non* dit « a-a-a », *oui* dit « a-an » ? | `a-a-a` et `a-an`, avec tirets, quel que soit le nombre de coups (règle 1.1). |
 | Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
 | Mot dialectal ? | On garde, on coche le dialecte. |
 | Mot français prononcé à la française ? | Orthographe française avec accents. |
