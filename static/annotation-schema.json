@@ -152,5 +152,8 @@
   "forbidden_chars": [
     "’",
     "‘"
-  ]
+  ],
+  "spellings": {
+    "anankiray": ["anaky iray", "anakiray"]
+  }
 }

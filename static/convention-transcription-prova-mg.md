@@ -612,12 +612,20 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
-  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2).
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
 
 Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la convention. À consulter avant de cocher *emprunt ambigu* : la réponse y est peut-être déjà.
+
+**Graphies retenues.** Quand un mot s'écrit de plusieurs façons dans les transcriptions, l'équipe en choisit une seule, et toutes les annotations sont alignées dessus.
+
+| On écrit | On n'écrit pas | Exemple |
+|---|---|---|
+| `anankiray` | `anaky iray`, `anakiray` | `Kanefa koa ny zavatra anankiray tsapako…` |
+
+Dans l'éditeur, une graphie non retenue est signalée pendant la frappe, avec un bouton qui la remplace (majuscule gardée en début de phrase : `Anankiray`). La liste est dans le fichier de schéma (`spellings`) ; on y ajoute les prochains cas au fil des décisions.
 
 Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniquement des segments **validés** (statut *done*), tous projets confondus, plus les listes de mots malgaches, français et anglais. Les brouillons et les segments en relecture n'y entrent pas. Si un segment validé est corrigé ou rouvert, ses anciens mots disparaissent des suggestions. Les mots gardent leur tiret et leur apostrophe (`an-tsena`, `afak'omaly`) ; les balises (`[euh]`), les faux départs (`mand-`), les chiffres et l'apostrophe typographique ’ sont écartés.
 
@@ -631,6 +639,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 | Particule *a*, *e*, *ange* (« Izao a, … ») ? | On l'écrit : `a`, `e`, sans *h* (règle 1.1). |
 | *Non* dit « a-a-a », *oui* dit « a-an » ? | `a-a-a` et `a-an`, avec tirets, quel que soit le nombre de coups (règle 1.1). |
 | Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
+| *Anaky iray* ou *anakiray* ? | `anankiray` (Lexique partagé). |
 | Mot dialectal ? | On garde, on coche le dialecte. |
 | Mot français prononcé à la française ? | Orthographe française avec accents. |
 | Mot français prononcé à la malgache ? | Orthographe malgache. |

@@ -30,6 +30,9 @@ TAGS = tuple(SCHEMA["allowed_tags"])
 SPEAKER_RE = re.compile(_FIELDS["locuteur"]["pattern"])
 
 FORBIDDEN_CHARS = tuple(SCHEMA.get("forbidden_chars", ()))
+# Spellings fixed by the team (lexicon): {"anankiray": ["anaky iray", "anakiray"]}.
+SPELLINGS = [(right, re.compile(r"\b(?:" + "|".join(re.escape(w).replace(r"\ ", r"\s+") for w in wrong) + r")\b", re.I))
+             for right, wrong in SCHEMA.get("spellings", {}).items()]
 
 FLAG_MULTI = "plusieurs locuteurs"
 FLAG_UNCERTAIN = "transcription incertaine"
@@ -175,6 +178,11 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
         joined = word.replace("-", "")
         out.append(_issue(f"Redoublement « {word} » : un seul mot, sans tiret ({joined}) (règle 2).",
                           {"type": "replace", "from": word, "to": joined, "label": f"Écrire {joined}"}))
+    for right, wrong_re in SPELLINGS:
+        for found in sorted(set(m.group(0) for m in wrong_re.finditer(plain))):
+            fixed = right[0].upper() + right[1:] if found[0].isupper() else right
+            out.append(_issue(f"« {found} » : écrire {fixed} (graphie retenue, lexique partagé).",
+                              {"type": "replace", "from": found, "to": fixed, "label": f"Écrire {fixed}"}))
     if meta.get("lang") == "mg":
         words = {w for w in re.split(r"[\s.,?]+", plain) if w}
         foreign = sorted(w for w in words if MG_FORBIDDEN_RE.search(w))
