@@ -1584,7 +1584,15 @@ function applyFix(fix) {
   } else if (fix.type === "capitalize") {
     ta.value = ta.value.replace(/^((?:\s*\[[^\]]*\])*\s*(?:\(\()?)(\p{Ll})/u, (_, pre, c) => pre + c.toUpperCase());
     ta.dispatchEvent(new Event("input"));
+  } else if (fix.type === "sentence_caps") {
+    ta.value = capitalizeSentences(ta.value);
+    ta.dispatchEvent(new Event("input"));
   }
+}
+
+// Rule 5.1: the first letter after . or ? is capitalised, past tags such as [euh] and an opening ((.
+function capitalizeSentences(text) {
+  return text.replace(/([.?]\s+(?:\[[^\]]*\]\s*)*(?:\(\()?)(\p{Ll})/gu, (_, pre, c) => pre + c.toUpperCase());
 }
 
 function showConventionErrors(errors) {
