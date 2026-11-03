@@ -106,6 +106,7 @@ On applique l'orthographe officielle du malgache.
 | *-i* à l'intérieur du mot | `fitiavana` | `fytiavana` |
 | Pas de c, q, u, w, x dans un mot malgache | `kafe` | `cafe` (sauf si prononcé à la française, voir règle 3) |
 | Un mot malgache ne finit jamais par une consonne | `izaho`, `anahy` | `zah`, `anah` (forme raccourcie : on écrit le mot entier) |
+| Pas de voyelle doublée (son allongé écrit une fois, règle 1.2) | `koa`, `izaho` | `koaa`, `izahoo` |
 | Pas d'accent en dialecte officiel (merina) ; les dialectes régionaux peuvent en avoir | `aho` | `ahô` en merina standard |
 
 ### Dialectes : on garde le mot dialectal
@@ -536,6 +537,8 @@ Pour confirmer, on clique sur la valeur déjà sélectionnée si elle est juste,
 - Si le mot affiché est une **faute de frappe** (`cakafy`), on corrige le mot : la langue revient seule à `mg`.
 - Le texte a le dernier mot : un clic sur `mg` repasse en `mixte` tant que le mot reste.
 - `fr` et `autre` ne sont jamais modifiés. Les formes élidées (`tamin'`), `a-an` et les balises sont ignorées.
+- Le mot en cours de frappe n'est jugé qu'une fois terminé (espace ou ponctuation), en quittant la zone de texte, ou à l'enregistrement : taper *endurance* n'affiche pas *en* entre-temps.
+- Une voyelle doublée (`koaa`, `izahoo`) est signalée avec un bouton de correction (`koa`, `izaho`) : c'est une faute, pas un mot français, donc la langue ne change pas.
 
 ### Dialecte (obligatoire)
 

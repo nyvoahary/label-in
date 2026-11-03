@@ -153,6 +153,7 @@ NOT_MG_LETTERS_RE = re.compile(r"[cquwx]", re.I)
 FINAL_CONSONANT_RE = re.compile(r"[bdfghjklmnprstvz]$", re.I)
 ACCENT_RE = re.compile(r"[àâäçéèêëîïôöùûü]", re.I)
 DIALECT_OFFICIAL = "officiel (merina standard)"
+DOUBLE_VOWEL_RE = re.compile(r"([aeiouy])\1+", re.I)
 # Wrong forms of the shared lexicon (zah, anah…) are Malagasy misspellings, reported on their own.
 SPELLING_WRONG = {w.lower() for wrong in SCHEMA.get("spellings", {}).values() for w in wrong if " " not in w}
 
@@ -204,6 +205,19 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
             fixed = right[0].upper() + right[1:] if found[0].isupper() else right
             out.append(_issue(f"« {found} » : écrire {fixed} (graphie retenue, lexique partagé).",
                               {"type": "replace", "from": found, "to": fixed, "label": f"Écrire {fixed}"}))
+    # Malagasy never doubles a vowel (koaa, izahoo): a drawn-out sound is written once (rule 1.2).
+    # French and English words (zoo, coopérer) and names are left alone.
+    if meta.get("lang") in ("mg", "mixte"):
+        official = meta.get("dialect") == DIALECT_OFFICIAL
+        # A hybrid (feeling-na, rule 3.5) is left alone when one of its parts is not Malagasy.
+        doubled = sorted({w for w in re.split(r"[\s.,?]+", plain) if w and not w[0].isupper()
+                          and DOUBLE_VOWEL_RE.search(w)
+                          and not any(not_malagasy(p, official) for p in w.split("-") if p)})
+        for word in doubled[:5]:
+            single = DOUBLE_VOWEL_RE.sub(r"\1", word)
+            out.append(_issue(f"« {word} » : pas de voyelle doublée en malgache, écrire {single} "
+                              "(son allongé écrit une fois, règle 1.2).",
+                              {"type": "replace", "from": word, "to": single, "label": f"Écrire {single}"}))
     if meta.get("lang") == "mg":
         words = {w for w in re.split(r"[\s.,?]+", plain) if w}
         official = meta.get("dialect") == DIALECT_OFFICIAL

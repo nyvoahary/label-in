@@ -936,12 +936,14 @@ function select(idx) {
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
     normalizeHesitations(ta);
-    if (syncSpeakers() | syncLanguage()) refreshConventionPanel();
+    if (syncSpeakers() | syncLanguage(true)) refreshConventionPanel();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
     updateSuggestions();
   });
+  // Leaving the text box: the last word typed is judged too.
+  ta.addEventListener("blur", () => { if (syncLanguage()) refreshConventionPanel(); });
 
   // Handle arrow-key navigation and Enter/Tab/Escape inside the autocomplete suggestion box.
   ta.addEventListener("keydown", (e) => {
@@ -1185,6 +1187,7 @@ function prepareMeta(t) {
 
 // Fields as they will be saved: values still "à confirmer" are left out.
 function confirmedMeta() {
+  if (syncLanguage()) refreshConventionPanel();  // the whole text, word being typed included
   const m = { ...state.meta, flags: [...state.meta.flags] };
   state.unconfirmed.forEach(k => delete m[k]);
   if (!state.excluded) delete m.exclude_reason;
@@ -1282,9 +1285,7 @@ function refreshConventionPanel() {
     b.classList.toggle("on", state.meta[b.dataset.set] === b.dataset.value));
   const sp = document.getElementById("convSpeaker");
   if (sp && document.activeElement !== sp) sp.value = state.meta.speaker || "";
-  const langNote = document.getElementById("langNote");
-  if (langNote) langNote.textContent = state.autoMixte && state.meta.lang === "mixte"
-    ? `Mixte automatique : ${state.foreignWords.slice(0, 5).join(", ")}` : "";
+  updateLangNote();
   const note = document.getElementById("speakerNote");
   if (note) note.textContent = state.tagSpeaker ? `Suit les balises du texte (règle 8.5)` : "";
   document.getElementById("convReason").disabled = !state.excluded;
@@ -1485,12 +1486,30 @@ function foreignWords(text, official) {
   return out;
 }
 
-// Returns true when it changed the language.
-function syncLanguage() {
+const WORD_BREAK = `\\s.,?!;:"«»“”…()`;
+
+// The text without the word the caret is in: a half-typed word (the "en" of "endurance") is not
+// judged until a space or punctuation follows, the text box is left, or the segment is saved.
+function textWithoutTypedWord(ta) {
+  if (document.activeElement !== ta) return ta.value;
+  const at = ta.selectionStart;
+  return ta.value.slice(0, at).replace(new RegExp(`[^${WORD_BREAK}]*$`), "") + " "
+    + ta.value.slice(at).replace(new RegExp(`^[^${WORD_BREAK}]*`), "");
+}
+
+function updateLangNote() {
+  const langNote = document.getElementById("langNote");
+  if (langNote) langNote.textContent = state.autoMixte && state.meta.lang === "mixte"
+    ? `Mixte automatique : ${(state.foreignWords || []).slice(0, 5).join(", ")}` : "";
+}
+
+// Returns true when it changed the language. typing: leave out the word being typed.
+function syncLanguage(typing = false) {
   if (!state.conv || state.excluded) return false;
   const ta = document.getElementById("annotation");
   const m = state.meta, before = m.lang;
-  state.foreignWords = foreignWords(ta ? ta.value : "", m.dialect === state.conv.dialect_official);
+  const text = ta ? (typing ? textWithoutTypedWord(ta) : ta.value) : "";
+  state.foreignWords = foreignWords(text, m.dialect === state.conv.dialect_official);
   if (state.foreignWords.length && m.lang === "mg") {
     m.lang = "mixte";
     state.autoMixte = true;
@@ -1499,6 +1518,7 @@ function syncLanguage() {
     state.autoMixte = false;
   }
   if (m.lang !== before) state.unconfirmed.delete("lang");
+  updateLangNote();
   return m.lang !== before;
 }
 
