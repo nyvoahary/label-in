@@ -46,9 +46,9 @@ Les petites particules qui demandent une confirmation, insistent ou accompagnent
 | *a* qui demande la confirmation | `Ilay izy a, ataoko fambola miandry` | `Ilay izy, ataoko fambola miandry` |
 | *a* en fin de question | `Tsara a?` | `Tsara ah?` |
 | *e* qui renforce un appel | `Henoy ange e, misy zavatra tantaraiko anareo ity.` | `Henoy ange eh, …` / `Henoy ange, …` |
-| Appel seul | `Ry namana e!` | `Ry namana eh!` |
+| Appel seul | `Ry namana e.` | `Ry namana eh!` / `Ry namana e!` |
 
-Ponctuation : une virgule après la particule quand elle clôt un appel ou une demande avant la suite de la phrase ; `?` ou `!` si elle termine la phrase.
+Ponctuation : une virgule après la particule quand elle clôt un appel ou une demande avant la suite de la phrase ; `?` si c'est une question, sinon `.` en fin de phrase (pas de `!`, règle 5).
 
 **Particule ou hésitation ?**
 
