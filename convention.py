@@ -154,6 +154,9 @@ FINAL_CONSONANT_RE = re.compile(r"[bdfghjklmnprstvz]$", re.I)
 ACCENT_RE = re.compile(r"[àâäçéèêëîïôöùûü]", re.I)
 DIALECT_OFFICIAL = "officiel (merina standard)"
 DOUBLE_VOWEL_RE = re.compile(r"([aeiouy])\1+", re.I)
+# "an" alone before , . ? ! or at the end, not after another "an" nor French "un" (the editor's
+# fixParticleAn() rewrites what this finds).
+PARTICLE_AN_RE = re.compile(r"(?<![\w'-])(?<!\ban )(?<!\bun )an(?=\s*[.,?!]|\s*$)", re.I)
 # Wrong forms of the shared lexicon (zah, anah…) are Malagasy misspellings, reported on their own.
 SPELLING_WRONG = {w.lower() for wrong in SCHEMA.get("spellings", {}).values() for w in wrong if " " not in w}
 
@@ -164,7 +167,8 @@ def not_malagasy(word: str, official: bool = True) -> bool:
     capitalised word (a name: Ra-Loob) may end with a consonant."""
     w = word.strip("()")
     lw = w.lower()
-    if not lw or lw.endswith("'") or lw == "a-an" or lw in SPELLING_WRONG or re.search(r"\d", lw):
+    # "an" alone is the particle a misspelt (rule 1.1), reported on its own.
+    if not lw or lw.endswith("'") or lw in ("a-an", "an") or lw in SPELLING_WRONG or re.search(r"\d", lw):
         return False
     return bool(NOT_MG_LETTERS_RE.search(lw) or (official and ACCENT_RE.search(lw))
                 or (not w[0].isupper() and FINAL_CONSONANT_RE.search(lw)))
@@ -206,6 +210,11 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
             fixed = right[0].upper() + right[1:] if found[0].isupper() else right
             out.append(_issue(f"« {found} » : écrire {fixed} (graphie retenue, lexique partagé).",
                               {"type": "replace", "from": found, "to": fixed, "label": f"Écrire {fixed}"}))
+    # Rule 1.1: the end-of-sentence particle is written a, not an (French "un an" left alone).
+    if meta.get("lang") in ("mg", "mixte") and PARTICLE_AN_RE.search(plain):
+        out.append(_issue("Particule « an » en fin de phrase : écrire a (règle 1.1). "
+                          "« a an » (oui) s'écrit a-an.",
+                          {"type": "particle_an", "label": "Écrire a"}))
     # Malagasy never doubles a vowel (koaa, izahoo): a drawn-out sound is written once (rule 1.2).
     # French and English words (zoo, coopérer) and names are left alone.
     if meta.get("lang") in ("mg", "mixte"):

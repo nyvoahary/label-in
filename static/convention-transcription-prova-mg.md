@@ -45,6 +45,7 @@ Les petites particules qui demandent une confirmation, insistent ou accompagnent
 | *a* qui demande la confirmation | `Izao a, rehefa …` | `Izao, rehefa …` / `Izao ah, rehefa …` / `Izao à, …` |
 | *a* qui demande la confirmation | `Ilay izy a, ataoko fambola miandry` | `Ilay izy, ataoko fambola miandry` |
 | *a* en fin de question | `Tsara a?` | `Tsara ah?` |
+| *a* prononcé avec une nasale (*an*) en fin de phrase : c'est la même particule | `Fy ny anarako a.` / `matahotra a, tsy haiko…` | `Fy ny anarako an.` / `matahotra an, …` |
 | *e* qui renforce un appel | `Henoy ange e, misy zavatra tantaraiko anareo ity.` | `Henoy ange eh, …` / `Henoy ange, …` |
 | Appel seul | `Ry namana e.` | `Ry namana eh!` / `Ry namana e!` |
 
@@ -651,6 +652,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 |---|---|
 | Le locuteur se répète ? | On garde. |
 | Particule *a*, *e*, *ange* (« Izao a, … ») ? | On l'écrit : `a`, `e`, sans *h* (règle 1.1). |
+| Particule entendue *an* (« matahotra an ») ? | `a` : même particule (règle 1.1). |
 | *Non* dit « a-a-a », *oui* dit « a-an » ? | `a-a-a` et `a-an`, avec tirets, quel que soit le nombre de coups (règle 1.1). |
 | Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
 | *Anaky iray* ou *anakiray* ? | `anankiray` (Lexique partagé). |

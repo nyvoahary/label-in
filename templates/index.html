@@ -1477,8 +1477,9 @@ function foreignWords(text, official) {
   const out = [];
   for (const w of words) {
     const lw = w.toLowerCase();
-    // Elided forms end with an apostrophe (tamin'), a-an (yes) is Malagasy, zah… is a misspelling.
-    if (!lw || lw.endsWith("'") || lw === "a-an" || wrong.has(lw) || /\d/.test(lw)) continue;
+    // Elided forms end with an apostrophe (tamin'), a-an (yes) is Malagasy, zah… and "an" (the
+    // particle a, rule 1.1) are misspellings reported on their own.
+    if (!lw || lw.endsWith("'") || lw === "a-an" || lw === "an" || wrong.has(lw) || /\d/.test(lw)) continue;
     const foreign = /[cquwx]/.test(lw) || (official && /[àâäçéèêëîïôöùûü]/.test(lw))
       || (w[0] === w[0].toLowerCase() && /[bdfghjklmnprstvz]$/.test(lw));
     if (foreign && !out.includes(w)) out.push(w);
@@ -1587,7 +1588,18 @@ function applyFix(fix) {
   } else if (fix.type === "sentence_caps") {
     ta.value = capitalizeSentences(ta.value);
     ta.dispatchEvent(new Event("input"));
+  } else if (fix.type === "particle_an") {
+    ta.value = fixParticleAn(ta.value);
+    ta.dispatchEvent(new Event("input"));
   }
+}
+
+// Rule 1.1: "a an" (yes) becomes a-an, then the end-of-sentence particle "an" becomes "a"
+// (not after another "an" nor French "un"; same match as PARTICLE_AN_RE on the server).
+function fixParticleAn(text) {
+  return text
+    .replace(/(?<![\p{L}'-])([aA]) an(?=\s*[.,?!]|\s*$)/gu, "$1-an")
+    .replace(/(?<![\p{L}'-])(?<!\ban )(?<!\bun )an(?=\s*[.,?!]|\s*$)/giu, m => m[0] === "A" ? "A" : "a");
 }
 
 // Rule 5.1: the first letter after . or ? is capitalised, past tags such as [euh] and an opening ((.
