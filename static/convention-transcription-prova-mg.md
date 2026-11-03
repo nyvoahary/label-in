@@ -105,6 +105,8 @@ On applique l'orthographe officielle du malgache.
 | *-y* en fin de mot | `misy`, `vary` | `misi`, `vari` |
 | *-i* à l'intérieur du mot | `fitiavana` | `fytiavana` |
 | Pas de c, q, u, w, x dans un mot malgache | `kafe` | `cafe` (sauf si prononcé à la française, voir règle 3) |
+| Un mot malgache ne finit jamais par une consonne | `izaho`, `anahy` | `zah`, `anah` (forme raccourcie : on écrit le mot entier) |
+| Pas d'accent en dialecte officiel (merina) ; les dialectes régionaux peuvent en avoir | `aho` | `ahô` en merina standard |
 
 ### Dialectes : on garde le mot dialectal
 
@@ -529,6 +531,12 @@ Pour confirmer, on clique sur la valeur déjà sélectionnée si elle est juste,
 
 > **Remarque.** Le marquage `mixte` est essentiel : les segments mixtes sont rares mais ce sont eux que le modèle rate le plus. On les sur-représente à l'entraînement grâce à ce champ.
 
+**Dans l'éditeur : `mg` passe seul en `mixte`.** Si la langue est `mg` et que le texte contient un mot qui ne peut pas être malgache (règle 2), la langue devient `mixte` toute seule, et les mots en cause s'affichent sous le champ (*Mixte automatique : réunion, projet*). Un mot ne peut pas être malgache s'il contient c, q, u, w ou x, un accent (en dialecte officiel seulement), ou s'il finit par une consonne (sauf un nom propre avec majuscule : `Ra-Loob`).
+
+- Si le mot affiché est une **faute de frappe** (`cakafy`), on corrige le mot : la langue revient seule à `mg`.
+- Le texte a le dernier mot : un clic sur `mg` repasse en `mixte` tant que le mot reste.
+- `fr` et `autre` ne sont jamais modifiés. Les formes élidées (`tamin'`), `a-an` et les balises sont ignorées.
+
 ### Dialecte (obligatoire)
 
 | Valeur | Indice typique |
@@ -612,7 +620,7 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
-  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026).
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026), formes raccourcies écrites en entier `izaho` et `anahy` (23 occurrences de `zah` et `anah` corrigées le 3 novembre 2026), pas de consonne finale et pas d'accent en dialecte officiel (règle 2), passage automatique de `mg` à `mixte` dans l'éditeur (section 9).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
@@ -624,6 +632,8 @@ Emprunts ambigus et noms propres, avec la graphie retenue. Versionné avec la co
 | On écrit | On n'écrit pas | Exemple |
 |---|---|---|
 | `anankiray` | `anaky iray`, `anakiray` | `Kanefa koa ny zavatra anankiray tsapako…` |
+| `izaho` | `zah` | `fa maninona moa izaho no mitazona camera` |
+| `anahy` | `anah` | `dia miantso anahy` |
 
 Dans l'éditeur, une graphie non retenue est signalée pendant la frappe, avec un bouton qui la remplace (majuscule gardée en début de phrase : `Anankiray`). La liste est dans le fichier de schéma (`spellings`) ; on y ajoute les prochains cas au fil des décisions.
 
@@ -640,6 +650,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 | *Non* dit « a-a-a », *oui* dit « a-an » ? | `a-a-a` et `a-an`, avec tirets, quel que soit le nombre de coups (règle 1.1). |
 | Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
 | *Anaky iray* ou *anakiray* ? | `anankiray` (Lexique partagé). |
+| *Zah*, *anah* ? | `izaho`, `anahy` : un mot malgache ne finit pas par une consonne (règle 2). |
 | Mot dialectal ? | On garde, on coche le dialecte. |
 | Mot français prononcé à la française ? | Orthographe française avec accents. |
 | Mot français prononcé à la malgache ? | Orthographe malgache. |

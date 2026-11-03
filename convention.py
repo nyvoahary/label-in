@@ -147,7 +147,28 @@ def text_errors(text: str, meta: dict) -> list[dict]:
 
 
 ALLOWED_CHARS_RE = re.compile(r"[^\w\s.,?'\-]")
-MG_FORBIDDEN_RE = re.compile(r"[cquwxàâäçéèêëîïôöùûü]", re.I)
+# Rules 2 and 3: letters Malagasy never uses, and no Malagasy word ends with a consonant. Accents
+# only count in the official dialect: regional dialects write some (ô…).
+NOT_MG_LETTERS_RE = re.compile(r"[cquwx]", re.I)
+FINAL_CONSONANT_RE = re.compile(r"[bdfghjklmnprstvz]$", re.I)
+ACCENT_RE = re.compile(r"[àâäçéèêëîïôöùûü]", re.I)
+DIALECT_OFFICIAL = "officiel (merina standard)"
+# Wrong forms of the shared lexicon (zah, anah…) are Malagasy misspellings, reported on their own.
+SPELLING_WRONG = {w.lower() for wrong in SCHEMA.get("spellings", {}).values() for w in wrong if " " not in w}
+
+
+def not_malagasy(word: str, official: bool = True) -> bool:
+    """A word that cannot be Malagasy (the editor's foreignWords() applies the same rule).
+    Elided forms (tamin'), a-an (yes, rule 1.1) and lexicon misspellings are left out; a
+    capitalised word (a name: Ra-Loob) may end with a consonant."""
+    w = word.strip("()")
+    lw = w.lower()
+    if not lw or lw.endswith("'") or lw == "a-an" or lw in SPELLING_WRONG or re.search(r"\d", lw):
+        return False
+    return bool(NOT_MG_LETTERS_RE.search(lw) or (official and ACCENT_RE.search(lw))
+                or (not w[0].isupper() and FINAL_CONSONANT_RE.search(lw)))
+
+
 DOTTED_ACRONYM_RE = re.compile(r"\b(?:[A-Za-z]\.){2,}")
 TITLE_RE = re.compile(r"\b(Dr|Pr|Mme|Mlle|Mr)\b\.?")
 
@@ -185,11 +206,13 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                               {"type": "replace", "from": found, "to": fixed, "label": f"Écrire {fixed}"}))
     if meta.get("lang") == "mg":
         words = {w for w in re.split(r"[\s.,?]+", plain) if w}
-        foreign = sorted(w for w in words if MG_FORBIDDEN_RE.search(w))
+        official = meta.get("dialect") == DIALECT_OFFICIAL
+        foreign = sorted(w for w in words if not_malagasy(w, official))
         if foreign:
-            out.append(_issue(f"Langue « mg » mais {', '.join(foreign[:5])} : c, q, u, w, x et les accents n'existent pas "
-                              "en malgache. Faute d'orthographe (règle 2), ou mot prononcé à la française : "
-                              "alors langue « mixte » (règle 3).",
+            out.append(_issue(f"Langue « mg » mais {', '.join(foreign[:5])} : c, q, u, w, x n'existent pas en malgache "
+                              "(ni les accents en dialecte officiel), et un mot malgache ne finit jamais par une "
+                              "consonne. Faute d'orthographe (règle 2), "
+                              "ou mot prononcé à la française : alors langue « mixte » (règle 3).",
                               {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}))
         parts = {p.lower() for w in words - set(foreign) for p in re.split(r"['\-]", w) if len(p) > 1}
         final_i = sorted(p for p in parts if p.endswith("i"))
@@ -271,4 +294,5 @@ def export_fields(anno: dict) -> dict:
 def options() -> dict:
     return {"version": VERSION, "langs": LANGS, "registers": REGISTERS, "qualities": QUALITIES,
             "flags": FLAGS, "exclude_reasons": EXCLUDE_REASONS, "dialects": DIALECTS, "tags": TAGS,
-            "speaker_pattern": SPEAKER_RE.pattern}
+            "speaker_pattern": SPEAKER_RE.pattern, "dialect_official": DIALECT_OFFICIAL,
+            "spelling_wrong": sorted(SPELLING_WRONG)}

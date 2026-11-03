@@ -936,7 +936,7 @@ function select(idx) {
   // Trigger autocomplete and schedule an autosave on every keystroke.
   ta.addEventListener("input", () => {
     normalizeHesitations(ta);
-    if (syncSpeakers()) refreshConventionPanel();
+    if (syncSpeakers() | syncLanguage()) refreshConventionPanel();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
@@ -1179,6 +1179,7 @@ function prepareMeta(t) {
   state.excluded = t.status === "excluded";
   const tags = speakerTags(t.annotation);
   state.tagSpeaker = tags.length >= 2 && meta.speaker === tags.join("+");
+  state.autoMixte = false;
   state.speakerBeforeTags = null;
 }
 
@@ -1249,7 +1250,7 @@ function conventionPanelHtml(t) {
       <div class="conv-head"><span>Convention PROVA-MG <b>${escapeHtml(c.version)}</b></span>${stateLabel}
         <a href="/documentation" target="labelin-convention">Lire la convention ↗</a></div>
       <div class="conv-grid">
-        ${field("lang", "Langue *", seg("lang", c.langs))}
+        ${field("lang", "Langue *", seg("lang", c.langs) + `<div class="speaker-note" id="langNote"></div>`)}
         ${field("register", "Registre *", seg("register", c.registers))}
         ${field("quality", "Qualité audio *", seg("quality", c.qualities))}
         ${field("dialect", "Dialecte *", seg("dialect", c.dialects), "wide")}
@@ -1281,6 +1282,9 @@ function refreshConventionPanel() {
     b.classList.toggle("on", state.meta[b.dataset.set] === b.dataset.value));
   const sp = document.getElementById("convSpeaker");
   if (sp && document.activeElement !== sp) sp.value = state.meta.speaker || "";
+  const langNote = document.getElementById("langNote");
+  if (langNote) langNote.textContent = state.autoMixte && state.meta.lang === "mixte"
+    ? `Mixte automatique : ${state.foreignWords.slice(0, 5).join(", ")}` : "";
   const note = document.getElementById("speakerNote");
   if (note) note.textContent = state.tagSpeaker ? `Suit les balises du texte (règle 8.5)` : "";
   document.getElementById("convReason").disabled = !state.excluded;
@@ -1292,6 +1296,7 @@ function refreshConventionPanel() {
 function conventionChanged(key) {
   if (key) state.unconfirmed.delete(key);
   syncSpeakers();
+  syncLanguage();
   document.getElementById("convErrors").textContent = "";
   document.querySelectorAll(".conv .field.missing").forEach(f => f.classList.remove("missing"));
   refreshConventionPanel();
@@ -1457,6 +1462,44 @@ function syncSpeakers() {
     else if (!tags.length && m.speaker) setFlag(FLAG_MULTI, false);
   }
   return m.speaker !== before || m.flags.includes(FLAG_MULTI) !== hadFlag;
+}
+
+// --- Language kept in step (rules 2 and 3) ---------------------------------------------------
+// A word with c, q, u, w or x, an accent (official dialect only: regional dialects write some),
+// or a final consonant (except in a capitalised name) is not Malagasy: "mg" becomes "mixte" and
+// the words are shown, so a typo is seen. Same rule as not_malagasy() on the server. Removing
+// those words brings an automatic "mixte" back to "mg"; the text wins over a click on "mg".
+function foreignWords(text, official) {
+  const wrong = new Set(state.conv?.spelling_wrong || []);
+  const words = (text || "").replace(/\[[^\]]*\]/g, " ").replace(/\(\(|\)\)/g, " ")
+    .split(/[\s.,?!;:"«»“”…()]+/);
+  const out = [];
+  for (const w of words) {
+    const lw = w.toLowerCase();
+    // Elided forms end with an apostrophe (tamin'), a-an (yes) is Malagasy, zah… is a misspelling.
+    if (!lw || lw.endsWith("'") || lw === "a-an" || wrong.has(lw) || /\d/.test(lw)) continue;
+    const foreign = /[cquwx]/.test(lw) || (official && /[àâäçéèêëîïôöùûü]/.test(lw))
+      || (w[0] === w[0].toLowerCase() && /[bdfghjklmnprstvz]$/.test(lw));
+    if (foreign && !out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
+// Returns true when it changed the language.
+function syncLanguage() {
+  if (!state.conv || state.excluded) return false;
+  const ta = document.getElementById("annotation");
+  const m = state.meta, before = m.lang;
+  state.foreignWords = foreignWords(ta ? ta.value : "", m.dialect === state.conv.dialect_official);
+  if (state.foreignWords.length && m.lang === "mg") {
+    m.lang = "mixte";
+    state.autoMixte = true;
+  } else if (!state.foreignWords.length && state.autoMixte && m.lang === "mixte") {
+    m.lang = "mg";
+    state.autoMixte = false;
+  }
+  if (m.lang !== before) state.unconfirmed.delete("lang");
+  return m.lang !== before;
 }
 
 // --- Live checks --------------------------------------------------------------------------
