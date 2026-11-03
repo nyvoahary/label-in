@@ -107,6 +107,7 @@ On applique l'orthographe officielle du malgache.
 | Pas de c, q, u, w, x dans un mot malgache | `kafe` | `cafe` (sauf si prononcé à la française, voir règle 3) |
 | Un mot malgache ne finit jamais par une consonne | `izaho`, `anahy` | `zah`, `anah` (forme raccourcie : on écrit le mot entier) |
 | Pas de voyelle doublée (son allongé écrit une fois, règle 1.2) | `koa`, `izaho` | `koaa`, `izahoo` |
+| **Exception :** préfixe *maha-* devant un mot qui commence par *a* : on garde les deux *a*, séparés par un trait d'union | `maha-ankizy`, `maha-asako` | `mahaankizy`, `mahankizy` |
 | Pas d'accent en dialecte officiel (merina) ; les dialectes régionaux peuvent en avoir | `aho` | `ahô` en merina standard |
 
 ### Dialectes : on garde le mot dialectal
@@ -654,6 +655,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 | Son étiré (« hoeeee ») ? | Mot écrit une fois : `hoe` ; `[euh]` s'il cherche ses mots (règle 1.2). |
 | *Anaky iray* ou *anakiray* ? | `anankiray` (Lexique partagé). |
 | *Zah*, *anah* ? | `izaho`, `anahy` : un mot malgache ne finit pas par une consonne (règle 2). |
+| Voyelle doublée (« koaa ») ? | Une seule : `koa`. Sauf *maha-* + mot en *a* : `maha-ankizy` (règle 2). |
 | Mot dialectal ? | On garde, on coche le dialecte. |
 | Mot français prononcé à la française ? | Orthographe française avec accents. |
 | Mot français prononcé à la malgache ? | Orthographe malgache. |

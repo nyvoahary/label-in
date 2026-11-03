@@ -214,6 +214,15 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                           and DOUBLE_VOWEL_RE.search(w)
                           and not any(not_malagasy(p, official) for p in w.split("-") if p)})
         for word in doubled[:5]:
+            # Exception: the prefix maha- before a word starting with a keeps both, with a hyphen
+            # (mahaankizy -> maha-ankizy, rule 2).
+            prefixed = re.match(r"(maha)(a.*)", word, re.I)
+            if prefixed:
+                hyphened = f"{prefixed.group(1)}-{prefixed.group(2)}"
+                out.append(_issue(f"« {word} » : préfixe maha- devant un mot qui commence par a, écrire "
+                                  f"{hyphened} avec un trait d'union (règle 2).",
+                                  {"type": "replace", "from": word, "to": hyphened, "label": f"Écrire {hyphened}"}))
+                continue
             single = DOUBLE_VOWEL_RE.sub(r"\1", word)
             out.append(_issue(f"« {word} » : pas de voyelle doublée en malgache, écrire {single} "
                               "(son allongé écrit une fois, règle 1.2).",
