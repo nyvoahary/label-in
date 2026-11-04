@@ -206,6 +206,7 @@ Toujours **en toutes lettres**, dans **la langue réellement parlée**.
 | Numéro public (standard d'une radio, d'une institution) | `zero telo efatra...` | `034...` |
 | Verset biblique | Le lecteur dit *"Jaona toko fahatelo, andininy fahenina ambin'ny folo"* : on écrit exactement ces mots | `Jaona 3:16` |
 | Date mixte | `ny vingt-cinq octobre` | `ny 25/10` |
+| Réseau mobile *4G*, *5G* | Nombre en lettres comme prononcé, puis `G` en capitale : `quatre G`, `cinq G`, `efatra G`, `four G` | `4G`, `5 G`, `quatre gé` |
 
 > **Remarque.** La conversion en chiffres se fait plus tard, automatiquement (normalisation). Si le transcripteur écrit "8h", on ne sait plus si le locuteur a dit "huit heures" ou "valo ora". L'information est perdue.
 
@@ -223,6 +224,7 @@ Toujours **en toutes lettres**, dans **la langue réellement parlée**.
 | Question | `Ho avy ve ianao?` |
 | Sigle prononcé comme un mot | `JIRAMA` |
 | Sigle épelé | `TVA` (pas `T.V.A.`, pas `té vé a`) |
+| Sigle avec un chiffre | Le chiffre en lettres (règle 4), la lettre en capitale : `quatre G` (pas `4G`) |
 | Titre dit en malgache | `dokotera Rabe` (pas `Dr Rabe`) |
 | Titre dit en français | `docteur Rabe` |
 
@@ -625,7 +627,7 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
-  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026), formes raccourcies écrites en entier `izaho` et `anahy` (23 occurrences de `zah` et `anah` corrigées le 3 novembre 2026), pas de consonne finale et pas d'accent en dialecte officiel (règle 2), passage automatique de `mg` à `mixte` dans l'éditeur (section 9).
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026), formes raccourcies écrites en entier `izaho` et `anahy` (23 occurrences de `zah` et `anah` corrigées le 3 novembre 2026), pas de consonne finale et pas d'accent en dialecte officiel (règle 2), passage automatique de `mg` à `mixte` dans l'éditeur (section 9), réseaux *4G* et *5G* écrits `quatre G`, `cinq G` (règles 4 et 5).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé
@@ -663,6 +665,7 @@ Dans l'éditeur, les **suggestions de mots** pendant la frappe viennent uniqueme
 | Mot français prononcé à la malgache ? | Orthographe malgache. |
 | Affixe malgache + mot français ? | Tiret : `mi-confirmer`. |
 | Un nombre ? | En lettres, dans la langue parlée. |
+| *4G*, *5G* ? | `quatre G`, `cinq G` (ou `efatra G`, `four G` selon ce qui est dit). |
 | Je n'entends pas ? | `[inaudible]`. Jamais deviner. |
 | J'entends mais je doute ? | `((mot))` + indicateur *incertain*. |
 | Whisper répète une phrase ? | Réécouter, garder seulement ce qui est dit. |
