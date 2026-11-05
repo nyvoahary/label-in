@@ -534,9 +534,11 @@ Pour confirmer, on clique sur la valeur déjà sélectionnée si elle est juste,
 | `mixte` | *"Tsy afaka ny réunion aho."* (un seul mot français suffit) |
 | `autre` | Segment entièrement dans une autre langue : *"Thank you so much."* |
 
+Un **nom propre** n'est pas un mot d'une langue : il ne rend pas le segment `mixte`. *"Tongasoa eto amin'ny fandaharana miaraka amin'i Axel."* reste `mg`.
+
 > **Remarque.** Le marquage `mixte` est essentiel : les segments mixtes sont rares mais ce sont eux que le modèle rate le plus. On les sur-représente à l'entraînement grâce à ce champ.
 
-**Dans l'éditeur : `mg` passe seul en `mixte`.** Si la langue est `mg` et que le texte contient un mot qui ne peut pas être malgache (règle 2), la langue devient `mixte` toute seule, et les mots en cause s'affichent sous le champ (*Mixte automatique : réunion, projet*). Un mot ne peut pas être malgache s'il contient c, q, u, w ou x, un accent (en dialecte officiel seulement), ou s'il finit par une consonne (sauf un nom propre avec majuscule : `Ra-Loob`).
+**Dans l'éditeur : `mg` passe seul en `mixte`.** Si la langue est `mg` et que le texte contient un mot qui ne peut pas être malgache (règle 2), la langue devient `mixte` toute seule, et les mots en cause s'affichent sous le champ (*Mixte automatique : réunion, projet*). Un mot ne peut pas être malgache s'il contient c, q, u, w ou x, un accent (en dialecte officiel seulement), ou s'il finit par une consonne. Un mot avec majuscule **au milieu d'une phrase** est pris pour un nom propre et n'est pas compté (`Axel`, `Ra-Loob`) ; en début de phrase, la majuscule ne dit rien et le mot est vérifié (*"Comment…"*).
 
 - Si le mot affiché est une **faute de frappe** (`cakafy`), on corrige le mot : la langue revient seule à `mg`.
 - Le texte a le dernier mot : un clic sur `mg` repasse en `mixte` tant que le mot reste.
@@ -627,7 +629,7 @@ Chaque annotation porte la version de la convention.
 - `v1.2` : ajout des règles 8.1 à 8.4 (alternance de locuteurs de dialectes différents, réponses courtes, chevauchement, changement de dialecte d'un même locuteur).
 - `v1.3` : ajout de la règle 8.5 (plusieurs locuteurs dans un segment), valeur `plusieurs` pour le dialecte, indicateur `plusieurs locuteurs`.
 - `v1.4` : apostrophes et tirets (règle 2), versets et numéros (règle 4), majuscule selon la phrase (5.1), données personnelles et balise `[personnel]` (6.1), pause sans changement de locuteur (8.6), raison d'exclusion *contenu sensible*.
-  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026), formes raccourcies écrites en entier `izaho` et `anahy` (23 occurrences de `zah` et `anah` corrigées le 3 novembre 2026), pas de consonne finale et pas d'accent en dialecte officiel (règle 2), passage automatique de `mg` à `mixte` dans l'éditeur (section 9), réseaux *4G* et *5G* écrits `quatre G`, `cinq G` (règles 4 et 5).
+  - Précisions ajoutées en `v1.4`, déjà appliquées dans les transcriptions : particules de discours *a*, *e*, *ange*… écrites sans *h* (1.1), *oui* et *non* sans mot écrits `a-an` et `a-a-a` (1.1), son allongé écrit une seule fois (1.2), graphie retenue `anankiray` (Lexique partagé ; les 27 occurrences de `anaky iray` et `anakiray` ont été corrigées le 30 octobre 2026), formes raccourcies écrites en entier `izaho` et `anahy` (23 occurrences de `zah` et `anah` corrigées le 3 novembre 2026), pas de consonne finale et pas d'accent en dialecte officiel (règle 2), passage automatique de `mg` à `mixte` dans l'éditeur (section 9), réseaux *4G* et *5G* écrits `quatre G`, `cinq G` (règles 4 et 5), un nom propre (`Axel`) ne rend pas le segment `mixte` (règle 3).
   - Mise à jour de l'éditeur, **sans changement de règle** (la version reste `v1.4`) : champs repris du segment précédent et à confirmer (section 9), boutons du champ Locuteur, balises `[S1]` `[S2]` qui remplissent le Locuteur et l'indicateur *plusieurs locuteurs* (8.5), suggestions de mots tirées des segments validés uniquement (Lexique partagé ci-dessous).
 
 ### Lexique partagé

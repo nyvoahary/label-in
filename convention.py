@@ -174,7 +174,13 @@ def not_malagasy(word: str, official: bool = True) -> bool:
                 or (not w[0].isupper() and FINAL_CONSONANT_RE.search(lw)))
 
 
-DOTTED_ACRONYM_RE = re.compile(r"\b(?:[A-Za-z]\.){2,}")
+def mid_sentence_names(text: str) -> set[str]:
+    """Capitalised words inside a sentence: names (Axel), not words of another language."""
+    return {w for sentence in re.split(r"[.?!]+", text)
+            for w in re.split(r"[\s,;:]+", sentence.strip())[1:] if w and w[0].isupper()}
+
+
+DOTTED_ACRONYM_RE =re.compile(r"\b(?:[A-Za-z]\.){2,}")
 TITLE_RE = re.compile(r"\b(Dr|Pr|Mme|Mlle|Mr)\b\.?")
 
 
@@ -238,7 +244,7 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                               "(son allongé écrit une fois, règle 1.2).",
                               {"type": "replace", "from": word, "to": single, "label": f"Écrire {single}"}))
     if meta.get("lang") == "mg":
-        words = {w for w in re.split(r"[\s.,?]+", plain) if w}
+        words = {w for w in re.split(r"[\s.,?]+", plain) if w} - mid_sentence_names(plain)
         official = meta.get("dialect") == DIALECT_OFFICIAL
         foreign = sorted(w for w in words if not_malagasy(w, official))
         if foreign:

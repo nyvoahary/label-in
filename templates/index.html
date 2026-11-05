@@ -1472,10 +1472,11 @@ function syncSpeakers() {
 // those words brings an automatic "mixte" back to "mg"; the text wins over a click on "mg".
 function foreignWords(text, official) {
   const wrong = new Set(state.conv?.spelling_wrong || []);
-  const words = (text || "").replace(/\[[^\]]*\]/g, " ").replace(/\(\(|\)\)/g, " ")
-    .split(/[\s.,?!;:"«»“”…()]+/);
+  const sentences = (text || "").replace(/\[[^\]]*\]/g, " ").replace(/\(\(|\)\)/g, " ").split(/[.?!]+/);
   const out = [];
-  for (const w of words) {
+  for (const sentence of sentences) for (const [i, w] of sentence.split(/[\s,;:"«»“”…()]+/).filter(Boolean).entries()) {
+    // A capital inside a sentence marks a name (Axel), not a word of another language.
+    if (i > 0 && w[0] !== w[0].toLowerCase()) continue;
     const lw = w.toLowerCase();
     // Elided forms end with an apostrophe (tamin'), a-an (yes) is Malagasy, zah… and "an" (the
     // particle a, rule 1.1) are misspellings reported on their own.
