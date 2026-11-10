@@ -52,6 +52,14 @@
   .filter button { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; }
   .filter button.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .filter-select { display: none; flex: 1; background: var(--accent); border: 1px solid var(--accent); color: white;
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; }
+  .filter-select option { background: var(--panel); color: var(--text); }
+  .sidebar { container-type: inline-size; }
+  @container (max-width: 379px) {
+    .filter button { display: none; }
+    .filter-select { display: block; }
+  }
   .task-list { flex: 1; overflow-y: auto; }
   .task-item { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
   .task-item:hover { background: var(--panel-2); }
@@ -273,6 +281,7 @@
       <button data-filter="review">Review <span id="reviewCount"></span></button>
       <button data-filter="excluded">Exclus</button>
       <button data-filter="loops" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés : à relire en priorité (règle 7.4)">↻ <span id="loopCount"></span></button>
+      <select class="filter-select" id="filterSelect" aria-label="Filtre"></select>
     </div>
     <div class="assignbar" id="assignBar" hidden></div>
     <div id="taskList" class="task-list"></div>
@@ -1787,6 +1796,22 @@ document.querySelectorAll(".filter button").forEach(b => {
     renderSidebar();
   };
 });
+
+// Narrow sidebar: the filter buttons collapse into a <select> that mirrors them (labels, counts, active state).
+(() => {
+  const bar = document.querySelector(".filter"), sel = document.getElementById("filterSelect");
+  const buttons = [...bar.querySelectorAll("button")];
+  const sync = () => {
+    sel.innerHTML = buttons.map(b => {
+      const label = b.dataset.filter === "loops" ? "↻ Boucles " + b.textContent.replace("↻", "").trim() : b.textContent.trim();
+      return `<option value="${b.dataset.filter}"${b.classList.contains("active") ? " selected" : ""}>${label}</option>`;
+    }).join("");
+  };
+  sel.onchange = () => buttons.find(b => b.dataset.filter === sel.value)?.click();
+  const mo = new MutationObserver(sync);
+  buttons.forEach(b => mo.observe(b, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class"] }));
+  sync();
+})();
 
 // Global keyboard shortcuts for saving, navigating, playback, and loop controls.
 document.addEventListener("keydown", (e) => {
