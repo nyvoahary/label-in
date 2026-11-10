@@ -48,8 +48,8 @@
   .progress { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
   .progress-bar { height: 4px; background: var(--panel-2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
   .progress-bar > div { height: 100%; background: var(--done); transition: width .2s; }
-  .filter { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; }
-  .filter button { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  .filter { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; }
+  .filter button { flex: 1 0 auto; white-space: nowrap; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; }
   .filter button.active { background: var(--accent); border-color: var(--accent); color: white; }
   .filter-select { display: none; flex: 1; background: var(--accent); border: 1px solid var(--accent); color: white;
@@ -275,12 +275,12 @@
       <div class="progress-bar"><div id="progressFill" style="width:0"></div></div>
     </div>
     <div class="filter">
-      <button data-filter="all" class="active">All</button>
-      <button data-filter="pending">Pending</button>
-      <button data-filter="done">Done</button>
-      <button data-filter="review">Review <span id="reviewCount"></span></button>
-      <button data-filter="excluded">Exclus</button>
-      <button data-filter="loops" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés : à relire en priorité (règle 7.4)">↻ <span id="loopCount"></span></button>
+      <button data-filter="all" class="active">All <span class="count"></span></button>
+      <button data-filter="pending">Pending <span class="count"></span></button>
+      <button data-filter="done">Done <span class="count"></span></button>
+      <button data-filter="review">Review <span class="count"></span></button>
+      <button data-filter="excluded">Exclus <span class="count"></span></button>
+      <button data-filter="loops" title="Brouillons qui ressemblent à une boucle Whisper, pas encore validés : à relire en priorité (règle 7.4)">↻ <span class="count"></span></button>
       <select class="filter-select" id="filterSelect" aria-label="Filtre"></select>
     </div>
     <div class="assignbar" id="assignBar" hidden></div>
@@ -655,11 +655,12 @@ function renderSidebar() {
   const sel = document.getElementById("projectSelect");
   const opt = sel.querySelector(`option[value="${CSS.escape(state.project)}"]`);
   if (opt) opt.textContent = `${state.project}  —  ${done + excluded}/${state.tasks.length} (${pct.toFixed(0)}%)`;
-  const reviewCount = state.tasks.filter(t => t.status === "review" || t.status === "autosave").length;
-  const rc = document.getElementById("reviewCount");
-  if (rc) rc.textContent = reviewCount ? `(${reviewCount})` : "";
-  const lc = document.getElementById("loopCount");
-  if (lc) lc.textContent = state.tasks.filter(isLoopToReview).length;
+  // Each tab shows how many segments it would list (the admin "Assigné à" filter applies too).
+  const scoped = state.tasks.filter(matchesAssignFilter);
+  document.querySelectorAll(".filter button").forEach(b => {
+    const c = b.querySelector(".count");
+    if (c) c.textContent = `(${scoped.filter(t => matchesStatusFilter(t, b.dataset.filter)).length})`;
+  });
 }
 
 // Destroys the current WaveSurfer instance and clears all related state.
@@ -1737,20 +1738,24 @@ async function save(advance, statusOverride) {
 
 // Returns the subset of tasks matching the active sidebar filter.
 function getFilteredTasks() {
-  return state.tasks.filter(t =>
-    state.filter === "all" ? true :
-    state.filter === "done" ? t.status === "done" :
-    state.filter === "pending" ? t.status === "pending" :
-    state.filter === "review" ? (t.status === "review" || t.status === "autosave") :
-    state.filter === "excluded" ? t.status === "excluded" :
-    state.filter === "loops" ? isLoopToReview(t) :
-    true
-  ).filter(t =>
-    // Admins only: "Assigné à" filter.
-    !state.assignFilter ? true :
+  return state.tasks.filter(t => matchesStatusFilter(t, state.filter) && matchesAssignFilter(t));
+}
+
+// Whether a task belongs under a sidebar status tab (all, pending, done, review, excluded, loops).
+function matchesStatusFilter(t, filter) {
+  return filter === "done" ? t.status === "done" :
+    filter === "pending" ? t.status === "pending" :
+    filter === "review" ? (t.status === "review" || t.status === "autosave") :
+    filter === "excluded" ? t.status === "excluded" :
+    filter === "loops" ? isLoopToReview(t) :
+    true;
+}
+
+// Admins only: "Assigné à" filter.
+function matchesAssignFilter(t) {
+  return !state.assignFilter ? true :
     state.assignFilter === "__none__" ? !(t.assignees || []).length :
-    (t.assignees || []).includes(state.assignFilter)
-  );
+    (t.assignees || []).includes(state.assignFilter);
 }
 
 // A likely Whisper loop that nobody has validated or excluded yet.
