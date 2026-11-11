@@ -17,6 +17,10 @@ import zlib
 from pathlib import Path
 
 SCHEMA = json.loads((Path(__file__).parent / "static" / "annotation-schema.json").read_text("utf-8"))
+# Common French and English words (the editor's suggestion lists): tells a borrowed word (voyage,
+# mixte) from a Malagasy misspelling (fytiavana) in the y-inside-a-word warning.
+FOREIGN_WORDS = {w.lower() for lang in ("fr", "en")
+                 for w in json.loads((Path(__file__).parent / "static" / f"{lang}_words.json").read_text("utf-8"))}
 _FIELDS = {f["name"]: f for f in SCHEMA["fields"]}
 
 VERSION = SCHEMA["convention_version"]
@@ -258,8 +262,21 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
         inner_y = sorted(p for p in parts if "y" in p[:-1])
         if final_i:
             out.append(_issue(f"{', '.join(final_i[:5])} : en malgache, -y en fin de mot (misy, pas misi) (règle 2)."))
-        if inner_y:
-            out.append(_issue(f"{', '.join(inner_y[:5])} : en malgache, -i à l'intérieur du mot (fitiavana, pas fytiavana) (règle 2)."))
+        # One warning per word, with a hint: a known French or English word means the segment is
+        # "mixte" (rule 3), anything else is most likely a Malagasy misspelling (rule 2).
+        for part in inner_y[:5]:
+            if part in FOREIGN_WORDS:
+                out.append(_issue(f"« {part} » : y à l'intérieur du mot, ce n'est pas du malgache. Mot français ou "
+                                  "anglais probable : langue « mixte » (règle 3). Sinon faute d'orthographe, "
+                                  "-i à l'intérieur du mot (règle 2).",
+                                  {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}))
+                continue
+            fixed = part[:-1].replace("y", "i") + part[-1]
+            out.append(_issue(f"« {part} » : faute d'orthographe probable, en malgache -i à l'intérieur du mot "
+                              f"(fitiavana, pas fytiavana) : écrire {fixed} (règle 2). Si c'est un mot étranger, "
+                              "langue « mixte » (règle 3).",
+                              {"type": "replace", "from": part, "to": fixed, "label": f"Écrire {fixed}"}
+                              if part in plain else None))
     if duration is not None and 0 < duration < 2:
         out.append(_issue("Segment de moins de 2 s : à garder seulement si c'est une réponse courte avec contenu, "
                           "sinon exclure (règle 8.2)."))
