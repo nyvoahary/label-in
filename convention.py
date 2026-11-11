@@ -107,8 +107,14 @@ def problems(status: str, text: str, meta: dict) -> list[str]:
     return out + [e["msg"] for e in text_errors(text, meta)]
 
 
-def _issue(msg: str, fix: dict | None = None) -> dict:
-    return {"msg": msg, "fix": fix} if fix else {"msg": msg}
+def _issue(msg: str, fix: dict | None = None, words: list[str] | None = None) -> dict:
+    """words: the words the issue is about, highlighted in the editor's text box."""
+    out = {"msg": msg}
+    if fix:
+        out["fix"] = fix
+    if words:
+        out["words"] = words
+    return out
 
 
 def text_errors(text: str, meta: dict) -> list[dict]:
@@ -241,12 +247,14 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                 hyphened = f"{prefixed.group(1)}-{prefixed.group(2)}"
                 out.append(_issue(f"« {word} » : préfixe maha- devant un mot qui commence par a, écrire "
                                   f"{hyphened} avec un trait d'union (règle 2).",
-                                  {"type": "replace", "from": word, "to": hyphened, "label": f"Écrire {hyphened}"}))
+                                  {"type": "replace", "from": word, "to": hyphened, "label": f"Écrire {hyphened}"},
+                                  [word]))
                 continue
             single = DOUBLE_VOWEL_RE.sub(r"\1", word)
             out.append(_issue(f"« {word} » : pas de voyelle doublée en malgache, écrire {single} "
                               "(son allongé écrit une fois, règle 1.2).",
-                              {"type": "replace", "from": word, "to": single, "label": f"Écrire {single}"}))
+                              {"type": "replace", "from": word, "to": single, "label": f"Écrire {single}"},
+                              [word]))
     if meta.get("lang") == "mg":
         words = {w for w in re.split(r"[\s.,?]+", plain) if w} - mid_sentence_names(plain)
         official = meta.get("dialect") == DIALECT_OFFICIAL
@@ -256,12 +264,13 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                               "(ni les accents en dialecte officiel), et un mot malgache ne finit jamais par une "
                               "consonne. Faute d'orthographe (règle 2), "
                               "ou mot prononcé à la française : alors langue « mixte » (règle 3).",
-                              {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}))
+                              {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, foreign[:5]))
         parts = {p.lower() for w in words - set(foreign) for p in re.split(r"['\-]", w) if len(p) > 1}
         final_i = sorted(p for p in parts if p.endswith("i"))
         inner_y = sorted(p for p in parts if "y" in p[:-1])
         if final_i:
-            out.append(_issue(f"{', '.join(final_i[:5])} : en malgache, -y en fin de mot (misy, pas misi) (règle 2)."))
+            out.append(_issue(f"{', '.join(final_i[:5])} : en malgache, -y en fin de mot (misy, pas misi) (règle 2).",
+                              words=final_i[:5]))
         # One warning per word, with a hint: a known French or English word means the segment is
         # "mixte" (rule 3), anything else is most likely a Malagasy misspelling (rule 2).
         for part in inner_y[:5]:
@@ -269,14 +278,14 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                 out.append(_issue(f"« {part} » : y à l'intérieur du mot, ce n'est pas du malgache. Mot français ou "
                                   "anglais probable : langue « mixte » (règle 3). Sinon faute d'orthographe, "
                                   "-i à l'intérieur du mot (règle 2).",
-                                  {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}))
+                                  {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, [part]))
                 continue
             fixed = part[:-1].replace("y", "i") + part[-1]
             out.append(_issue(f"« {part} » : faute d'orthographe probable, en malgache -i à l'intérieur du mot "
                               f"(fitiavana, pas fytiavana) : écrire {fixed} (règle 2). Si c'est un mot étranger, "
                               "langue « mixte » (règle 3).",
                               {"type": "replace", "from": part, "to": fixed, "label": f"Écrire {fixed}"}
-                              if part in plain else None))
+                              if part in plain else None, [part]))
     if duration is not None and 0 < duration < 2:
         out.append(_issue("Segment de moins de 2 s : à garder seulement si c'est une réponse courte avec contenu, "
                           "sinon exclure (règle 8.2)."))

@@ -235,6 +235,14 @@
     line-height: 1.5; font-family: inherit; resize: vertical; }
   textarea:focus { outline: none; border-color: var(--accent); }
   #annotationWrap { position: relative; }
+  /* Flagged words are highlighted on a layer behind the (transparent) text box. */
+  #annotationWrap textarea { position: relative; z-index: 1; background: transparent; }
+  #taHighlights { position: absolute; top: 0; left: 0; z-index: 0; background: var(--panel); color: transparent;
+    white-space: pre-wrap; word-wrap: break-word; overflow: hidden; pointer-events: none; border-color: transparent;
+    border-style: solid; }
+  #taHighlights mark { color: transparent; border-radius: 3px; padding: 0; background: rgba(245,158,11,.35);
+    box-shadow: inset 0 -2px 0 rgba(245,158,11,.9); }
+  #taHighlights mark.err { background: rgba(239,68,68,.30); box-shadow: inset 0 -2px 0 rgba(239,68,68,.9); }
   #suggestionBox { position: fixed; background: var(--panel-2);
     border: 1px solid var(--accent); border-radius: 6px; z-index: 1000; max-height: 180px;
     overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,.35); display: none; min-width: 140px; }
@@ -865,6 +873,7 @@ function select(idx) {
       ${["S1", "S2", "S3"].map(s => `<button type="button" data-tag="[${s}]" title="Tour de parole de ${s} (règle 8.5, échange inséparable)">[${s}]</button>`).join("")}
     </div>` : ""}
     <div id="annotationWrap">
+      <div id="taHighlights" aria-hidden="true"></div>
       <textarea id="annotation" placeholder="Type the transcription...">${escapeHtml(t.annotation || (t.status === "done" || t.status === "excluded" ? "" : t.prediction) || "")}</textarea>
       <div id="taMirror"></div>
       <div id="suggestionBox"></div>
@@ -955,7 +964,11 @@ function select(idx) {
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
     updateSuggestions();
+    renderHighlights();
   });
+  state.hlWords = [];
+  ta.addEventListener("scroll", () => { document.getElementById("taHighlights").scrollTop = ta.scrollTop; });
+  new ResizeObserver(() => renderHighlights()).observe(ta);
   // Leaving the text box: the last word typed is judged too.
   ta.addEventListener("blur", () => { if (syncLanguage()) refreshConventionPanel(); });
 
@@ -1560,6 +1573,34 @@ async function runLiveCheck() {
   } catch (e) { /* the save-time check still applies */ }
 }
 
+// Paints the words named by the live checks (state.hlWords) under the text box: the layer copies
+// the box's text and metrics, with each flagged word wrapped in a <mark> (red: blocking, amber: to check).
+function renderHighlights() {
+  const ta = document.getElementById("annotation"), hl = document.getElementById("taHighlights");
+  if (!ta || !hl) return;
+  const cs = getComputedStyle(ta);
+  ["fontSize","fontFamily","fontWeight","fontStyle","letterSpacing","lineHeight","paddingTop","paddingBottom",
+   "paddingLeft","borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth","borderRadius",
+   "boxSizing"].forEach(p => hl.style[p] = cs[p]);
+  // Leave room for the text box's scrollbar so lines wrap at the same place.
+  const sb = ta.offsetWidth - ta.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+  hl.style.paddingRight = parseFloat(cs.paddingRight) + sb + "px";
+  hl.style.width = ta.offsetWidth + "px";
+  hl.style.height = ta.offsetHeight + "px";
+  const kinds = new Map();
+  for (const { word, kind } of state.hlWords || []) if (word && kinds.get(word) !== "err") kinds.set(word, kind);
+  let html = escapeHtml(ta.value);
+  if (kinds.size) {
+    const alt = [...kinds.keys()].sort((a, b) => b.length - a.length)
+      .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const re = new RegExp(`(?<![\\p{L}\\p{M}])(${alt})(?![\\p{L}\\p{M}])`, "giu");
+    html = ta.value.split(re).map((piece, n) => n % 2
+      ? `<mark class="${kinds.get(piece.toLowerCase()) || "warn"}">${escapeHtml(piece)}</mark>` : escapeHtml(piece)).join("");
+  }
+  hl.innerHTML = html + "\n";
+  hl.scrollTop = ta.scrollTop;
+}
+
 // "(règle 8.5)" in a message links to that rule on the convention page.
 function ruleLinks(html) {
   return html.replace(/(règles? )(\d+(?:\.\d+)?)/g, (_, w, n) =>
@@ -1570,6 +1611,8 @@ function renderLiveChecks({ errors, warnings }) {
   const box = document.getElementById("liveChecks");
   if (!box) return;
   const items = [...errors.map(e => ({ ...e, kind: "err" })), ...warnings.map(w => ({ ...w, kind: "warn" }))];
+  state.hlWords = items.flatMap(i => (i.words || []).map(word => ({ word: word.toLowerCase(), kind: i.kind })));
+  renderHighlights();
   state.liveFixes = items.map(i => i.fix);
   box.innerHTML = items.map((i, n) => `
     <div class="item ${i.kind}">
