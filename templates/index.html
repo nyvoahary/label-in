@@ -671,6 +671,35 @@ function renderSidebar() {
   });
 }
 
+// Waveform bars snapped to whole device pixels: WaveSurfer's own bars are 2px * devicePixelRatio
+// wide, so at 110 % or 125 % zoom they start between pixels and come out unevenly blurred.
+// Heights are scaled to the loudest sample of the whole clip (not of each canvas chunk).
+function drawBars(channels, ctx, ws) {
+  const data = channels[0], len = data.length;
+  const { width, height } = ctx.canvas;
+  if (!len || !width) return;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const bar = Math.max(1, Math.round(2 * dpr)), gap = Math.max(1, Math.round(1 * dpr)), step = bar + gap;
+  let peak = ws?._labelinPeak;
+  if (!peak) {
+    const full = ws?.getDecodedData?.()?.getChannelData(0) || data;
+    peak = 0;
+    for (let i = 0; i < full.length; i++) { const v = Math.abs(full[i]); if (v > peak) peak = v; }
+    peak = peak || 1;
+    if (ws?.getDecodedData?.()) ws._labelinPeak = peak;
+  }
+  const n = Math.floor((width + gap) / step), mid = height / 2;
+  ctx.beginPath();
+  for (let b = 0; b < n; b++) {
+    const from = Math.floor(b * len / n), to = Math.max(from + 1, Math.floor((b + 1) * len / n));
+    let m = 0;
+    for (let i = from; i < to; i++) { const v = Math.abs(data[i]); if (v > m) m = v; }
+    const h = Math.max(1, Math.round((m / peak) * height));
+    ctx.rect(b * step, Math.round(mid - h / 2), bar, h);
+  }
+  ctx.fill();
+}
+
 // Destroys the current WaveSurfer instance and clears all related state.
 function teardownWavesurfer() {
   if (state.ws) {
@@ -743,19 +772,18 @@ function updateLoopButtonStates() {
 // Initialises WaveSurfer with the regions plugin and wires up all playback/loop event handlers.
 function initWavesurfer(audioUrl) {
   teardownWavesurfer();
+  let wsRef = null;
   const ws = WaveSurfer.create({
     container: "#waveform",
     waveColor: "#4f8cff",
     progressColor: "#2dd4bf",
     cursorColor: "#e6e8ee",
     cursorWidth: 1,
-    barWidth: 2,
-    barGap: 1,
-    barRadius: 1,
     height: 96,
-    normalize: true,
+    renderFunction: (channels, ctx) => drawBars(channels, ctx, wsRef),
     url: audioUrl,
   });
+  wsRef = ws;
   state.ws = ws;
 
   const regions = ws.registerPlugin(RegionsPlugin.create());
