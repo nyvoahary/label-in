@@ -672,13 +672,23 @@ function renderSidebar() {
 }
 
 // Waveform bars snapped to whole device pixels: WaveSurfer's own bars are 2px * devicePixelRatio
-// wide, so at 110 % or 125 % zoom they start between pixels and come out unevenly blurred.
+// wide, so at 110 % or 125 % zoom (or a smaller system text size, ratio < 1) they start between
+// pixels and come out unevenly blurred.
 // Heights are scaled to the loudest sample of the whole clip (not of each canvas chunk).
 function drawBars(channels, ctx, ws) {
   const data = channels[0], len = data.length;
-  const { width, height } = ctx.canvas;
+  const canvas = ctx.canvas, dpr = window.devicePixelRatio || 1;
+  // Below 1 (system text or display scale made smaller) WaveSurfer still sizes the canvas at 1x and
+  // the browser shrinks it, which smears the bars: draw at the real device size instead.
+  if (dpr < 1) {
+    const fill = ctx.fillStyle;
+    const cssW = parseFloat(canvas.style.width) || canvas.width, cssH = parseFloat(canvas.style.height) || canvas.height;
+    canvas.width = Math.max(1, Math.round(cssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    ctx.fillStyle = fill;
+  }
+  const { width, height } = canvas;
   if (!len || !width) return;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
   const bar = Math.max(1, Math.round(2 * dpr)), gap = Math.max(1, Math.round(1 * dpr)), step = bar + gap;
   let peak = ws?._labelinPeak;
   if (!peak) {
