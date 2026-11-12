@@ -255,16 +255,32 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
                               "(son allongé écrit une fois, règle 1.2).",
                               {"type": "replace", "from": word, "to": single, "label": f"Écrire {single}"},
                               [word]))
-    if meta.get("lang") == "mg":
+    if meta.get("lang") in ("mg", "mixte"):
         words = {w for w in re.split(r"[\s.,?]+", plain) if w} - mid_sentence_names(plain)
         official = meta.get("dialect") == DIALECT_OFFICIAL
         foreign = sorted(w for w in words if not_malagasy(w, official))
+        # A capitalised word still here starts a sentence (mid-sentence ones are names already):
+        # maybe a name (Claude François), which does not make the segment "mixte" (rule 3).
+        names = [w for w in foreign if w[0].isupper()]
+        lower = [w for w in foreign if not w[0].isupper()]
+        quoted = ", ".join(f"« {w} »" for w in names[:5])
+        if meta.get("lang") == "mg" and names:
+            out.append(_issue(f"{quoted} commence la phrase et ne peut pas être malgache : gardé comme nom propre "
+                              "(langue « mg », règle 3). Si c'est un mot français ou anglais, langue « mixte ».",
+                              {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, names[:5]))
+        elif meta.get("lang") == "mixte" and names and not lower:
+            out.append(_issue(f"{quoted} commence la phrase : nom propre ? Un nom propre ne rend pas le segment "
+                              "mixte : si le reste est en malgache, langue « mg » (règle 3).",
+                              {"type": "lang", "value": "mg", "label": "Passer en « mg »"}, names[:5]))
+    if meta.get("lang") == "mg":
+        foreign = lower
         if foreign:
             out.append(_issue(f"Langue « mg » mais {', '.join(foreign[:5])} : c, q, u, w, x n'existent pas en malgache "
                               "(ni les accents en dialecte officiel), et un mot malgache ne finit jamais par une "
                               "consonne. Faute d'orthographe (règle 2), "
                               "ou mot prononcé à la française : alors langue « mixte » (règle 3).",
                               {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, foreign[:5]))
+        foreign = foreign + names
         parts = {p.lower() for w in words - set(foreign) for p in re.split(r"['\-]", w) if len(p) > 1}
         final_i = sorted(p for p in parts if p.endswith("i"))
         inner_y = sorted(p for p in parts if "y" in p[:-1])

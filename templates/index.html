@@ -1247,6 +1247,8 @@ function prepareMeta(t) {
   const tags = speakerTags(t.annotation);
   state.tagSpeaker = tags.length >= 2 && meta.speaker === tags.join("+");
   state.autoMixte = false;
+  // A segment saved as "mg" keeps it: a capitalised word starting a sentence was judged a name.
+  state.namesAsMg = own.lang === "mg";
   state.speakerBeforeTags = null;
 }
 
@@ -1361,6 +1363,8 @@ function refreshConventionPanel() {
 
 function conventionChanged(key) {
   if (key) state.unconfirmed.delete(key);
+  // Choosing "mg" by hand vouches that capitalised words starting a sentence are names (Claude).
+  if (key === "lang") state.namesAsMg = state.meta.lang === "mg";
   syncSpeakers();
   syncLanguage();
   document.getElementById("convErrors").textContent = "";
@@ -1566,8 +1570,11 @@ function textWithoutTypedWord(ta) {
 
 function updateLangNote() {
   const langNote = document.getElementById("langNote");
-  if (langNote) langNote.textContent = state.autoMixte && state.meta.lang === "mixte"
-    ? `Mixte automatique : ${(state.foreignWords || []).slice(0, 5).join(", ")}` : "";
+  if (!langNote) return;
+  const words = (state.foreignWords || []).slice(0, 5).join(", ");
+  langNote.textContent = state.autoMixte && state.meta.lang === "mixte"
+    ? (state.foreignNamesOnly ? `Mixte automatique : ${words} — nom propre ? Cliquez « mg ».` : `Mixte automatique : ${words}`)
+    : state.foreignNamesOnly && state.meta.lang === "mg" ? `${words} : gardé comme nom propre.` : "";
 }
 
 // Returns true when it changed the language. typing: leave out the word being typed.
@@ -1577,10 +1584,15 @@ function syncLanguage(typing = false) {
   const m = state.meta, before = m.lang;
   const text = ta ? (typing ? textWithoutTypedWord(ta) : ta.value) : "";
   state.foreignWords = foreignWords(text, m.dialect === state.conv.dialect_official);
-  if (state.foreignWords.length && m.lang === "mg") {
+  // Words left that are capitalised all start a sentence (mid-sentence ones are skipped as names):
+  // maybe a name (Claude François). "mixte" stays the default; a click on "mg" keeps "mg" (rule 3).
+  state.foreignNamesOnly = state.foreignWords.length > 0
+    && state.foreignWords.every(w => w[0] !== w[0].toLowerCase());
+  const foreign = state.foreignWords.length > 0 && !(state.foreignNamesOnly && state.namesAsMg);
+  if (foreign && m.lang === "mg") {
     m.lang = "mixte";
     state.autoMixte = true;
-  } else if (!state.foreignWords.length && state.autoMixte && m.lang === "mixte") {
+  } else if (!foreign && state.autoMixte && m.lang === "mixte") {
     m.lang = "mg";
     state.autoMixte = false;
   }
