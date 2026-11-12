@@ -281,7 +281,10 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
         # likely a Malagasy misspelling: when y is the only problem and the word is not a known
         # French or English one (voyage), say so with a one-click fix, in "mg" and "mixte" alike.
         for w in lower:
-            if not has_inner_y(w) or w.lower() in FOREIGN_WORDS:
+            # A French root with a Malagasy ending is French too: voyagen'i (voyage + -n'i).
+            pieces = [p for p in re.split(r"['\-]", w.lower()) if p]
+            known = any(p in FOREIGN_WORDS or (p.endswith("n") and p[:-1] in FOREIGN_WORDS) for p in [w.lower(), *pieces])
+            if not has_inner_y(w) or known:
                 continue
             fixed = "".join(p[:-1].replace("y", "i") + p[-1:] if p not in "'-" else p
                             for p in re.split(r"(['\-])", w))
