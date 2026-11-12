@@ -1547,8 +1547,8 @@ function syncSpeakers() {
 }
 
 // --- Language kept in step (rules 2 and 3) ---------------------------------------------------
-// A word with c, q, u, w or x, an accent (official dialect only: regional dialects write some),
-// or a final consonant (except in a capitalised name) is not Malagasy: "mg" becomes "mixte" and
+// A word with c, q, u, w or x, y anywhere but at its end, an accent (official dialect only:
+// regional dialects write some), or a final consonant (except in a capitalised name) is not Malagasy: "mg" becomes "mixte" and
 // the words are shown, so a typo is seen. Same rule as not_malagasy() on the server. Removing
 // those words brings an automatic "mixte" back to "mg"; the text wins over a click on "mg".
 function foreignWords(text, official) {
@@ -1562,7 +1562,9 @@ function foreignWords(text, official) {
     // Elided forms end with an apostrophe (tamin'), a-an (yes) is Malagasy, zah… and "an" (the
     // particle a, rule 1.1) are misspellings reported on their own.
     if (!lw || lw.endsWith("'") || lw === "a-an" || lw === "an" || wrong.has(lw) || /\d/.test(lw)) continue;
-    const foreign = /[cquwx]/.test(lw) || (official && /[àâäçéèêëîïôöùûü]/.test(lw))
+    // y only ends a word, or a part of one (izy-ireo, an'ny): voyage, fytiavana are not Malagasy (rule 2).
+    const innerY = lw.split(/['-]/).some(p => p.slice(0, -1).includes("y"));
+    const foreign = /[cquwx]/.test(lw) || (official && /[àâäçéèêëîïôöùûü]/.test(lw)) || innerY
       || (w[0] === w[0].toLowerCase() && /[bdfghjklmnprstvz]$/.test(lw));
     if (foreign && !out.includes(w)) out.push(w);
   }

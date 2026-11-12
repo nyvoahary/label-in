@@ -162,6 +162,11 @@ ALLOWED_CHARS_RE = re.compile(r"[^\w\s.,?'\-]")
 NOT_MG_LETTERS_RE = re.compile(r"[cquwx]", re.I)
 FINAL_CONSONANT_RE = re.compile(r"[bdfghjklmnprstvz]$", re.I)
 ACCENT_RE = re.compile(r"[àâäçéèêëîïôöùûü]", re.I)
+
+
+def has_inner_y(word: str) -> bool:
+    """y anywhere but at the end of a word (or of a part: izy-ireo, an'ny): not Malagasy (rule 2)."""
+    return any("y" in p[:-1] for p in re.split(r"['\-]", word.lower()) if p)
 DIALECT_OFFICIAL = "officiel (merina standard)"
 DOUBLE_VOWEL_RE = re.compile(r"([aeiouy])\1+", re.I)
 # "an" alone before , . ? ! or at the end, not after another "an" nor French "un" (the editor's
@@ -174,13 +179,13 @@ SPELLING_WRONG = {w.lower() for wrong in SCHEMA.get("spellings", {}).values() fo
 def not_malagasy(word: str, official: bool = True) -> bool:
     """A word that cannot be Malagasy (the editor's foreignWords() applies the same rule).
     Elided forms (tamin'), a-an (yes, rule 1.1) and lexicon misspellings are left out; a
-    capitalised word (a name: Ra-Loob) may end with a consonant."""
+    capitalised word (a name: Ra-Loob) may end with a consonant. y only ends a word (rule 2)."""
     w = word.strip("()")
     lw = w.lower()
     # "an" alone is the particle a misspelt (rule 1.1), reported on its own.
     if not lw or lw.endswith("'") or lw in ("a-an", "an") or lw in SPELLING_WRONG or re.search(r"\d", lw):
         return False
-    return bool(NOT_MG_LETTERS_RE.search(lw) or (official and ACCENT_RE.search(lw))
+    return bool(NOT_MG_LETTERS_RE.search(lw) or (official and ACCENT_RE.search(lw)) or has_inner_y(lw)
                 or (not w[0].isupper() and FINAL_CONSONANT_RE.search(lw)))
 
 
@@ -272,36 +277,35 @@ def text_warnings(text: str, meta: dict, duration: float | None = None, drafts: 
             out.append(_issue(f"{quoted} commence la phrase : nom propre ? Un nom propre ne rend pas le segment "
                               "mixte : si le reste est en malgache, langue « mg » (règle 3).",
                               {"type": "lang", "value": "mg", "label": "Passer en « mg »"}, names[:5]))
+        # y inside a word makes it not Malagasy (the segment turns "mixte"), but fytiavana is most
+        # likely a Malagasy misspelling: when y is the only problem and the word is not a known
+        # French or English one (voyage), say so with a one-click fix, in "mg" and "mixte" alike.
+        for w in lower:
+            if not has_inner_y(w) or w.lower() in FOREIGN_WORDS:
+                continue
+            fixed = "".join(p[:-1].replace("y", "i") + p[-1:] if p not in "'-" else p
+                            for p in re.split(r"(['\-])", w))
+            if not_malagasy(fixed, official):
+                continue
+            out.append(_issue(f"« {w} » : y à l'intérieur du mot n'existe pas en malgache (fitiavana, pas "
+                              f"fytiavana) : faute probable, écrire {fixed} (règle 2). Si c'est un mot étranger, "
+                              "langue « mixte » (règle 3).",
+                              {"type": "replace", "from": w, "to": fixed, "label": f"Écrire {fixed}"}
+                              if w in plain else None, [w]))
     if meta.get("lang") == "mg":
         foreign = lower
         if foreign:
             out.append(_issue(f"Langue « mg » mais {', '.join(foreign[:5])} : c, q, u, w, x n'existent pas en malgache "
-                              "(ni les accents en dialecte officiel), et un mot malgache ne finit jamais par une "
-                              "consonne. Faute d'orthographe (règle 2), "
+                              "(ni les accents en dialecte officiel, ni y ailleurs qu'en fin de mot), et un mot "
+                              "malgache ne finit jamais par une consonne. Faute d'orthographe (règle 2), "
                               "ou mot prononcé à la française : alors langue « mixte » (règle 3).",
                               {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, foreign[:5]))
         foreign = foreign + names
         parts = {p.lower() for w in words - set(foreign) for p in re.split(r"['\-]", w) if len(p) > 1}
         final_i = sorted(p for p in parts if p.endswith("i"))
-        inner_y = sorted(p for p in parts if "y" in p[:-1])
         if final_i:
             out.append(_issue(f"{', '.join(final_i[:5])} : en malgache, -y en fin de mot (misy, pas misi) (règle 2).",
                               words=final_i[:5]))
-        # One warning per word, with a hint: a known French or English word means the segment is
-        # "mixte" (rule 3), anything else is most likely a Malagasy misspelling (rule 2).
-        for part in inner_y[:5]:
-            if part in FOREIGN_WORDS:
-                out.append(_issue(f"« {part} » : y à l'intérieur du mot, ce n'est pas du malgache. Mot français ou "
-                                  "anglais probable : langue « mixte » (règle 3). Sinon faute d'orthographe, "
-                                  "-i à l'intérieur du mot (règle 2).",
-                                  {"type": "lang", "value": "mixte", "label": "Passer en « mixte »"}, [part]))
-                continue
-            fixed = part[:-1].replace("y", "i") + part[-1]
-            out.append(_issue(f"« {part} » : faute d'orthographe probable, en malgache -i à l'intérieur du mot "
-                              f"(fitiavana, pas fytiavana) : écrire {fixed} (règle 2). Si c'est un mot étranger, "
-                              "langue « mixte » (règle 3).",
-                              {"type": "replace", "from": part, "to": fixed, "label": f"Écrire {fixed}"}
-                              if part in plain else None, [part]))
     if duration is not None and 0 < duration < 2:
         out.append(_issue("Segment de moins de 2 s : à garder seulement si c'est une réponse courte avec contenu, "
                           "sinon exclure (règle 8.2)."))
