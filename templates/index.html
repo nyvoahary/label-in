@@ -395,6 +395,33 @@ const STORAGE_KEY = "labelin.lastProject";
 // Cursor position saved from the annotation textarea before it loses focus.
 let savedCursor = 0;
 
+// Changes the text box through the browser's own editing (execCommand "insertText"), so tags,
+// ((mot)), suggestions, predictions and one-click fixes are undone and redone with Ctrl+Z and
+// Ctrl+Shift+Z / Ctrl+Y like typing; assigning ta.value would wipe the undo history. Only the
+// changed part is replaced. Fires the box's "input" event itself. caret: where the cursor ends up.
+function setText(ta, text, caret) {
+  const old = ta.value;
+  if (text !== old) {
+    let a = 0;
+    while (a < old.length && a < text.length && old[a] === text[a]) a++;
+    let b = 0;
+    while (b < old.length - a && b < text.length - a && old[old.length - 1 - b] === text[text.length - 1 - b]) b++;
+    const insert = text.slice(a, text.length - b);
+    ta.focus();
+    ta.setSelectionRange(a, old.length - b);
+    const ok = insert ? document.execCommand("insertText", false, insert) : document.execCommand("delete");
+    if (!ok || ta.value !== text) {  // no execCommand: same text, without undo
+      ta.value = text;
+      ta.dispatchEvent(new Event("input"));
+    }
+    if (caret == null) caret = a + insert.length;
+  }
+  if (caret != null) {
+    ta.setSelectionRange(caret, caret);
+    savedCursor = caret;
+  }
+}
+
 // Keeps savedCursor in sync with the annotation textarea's caret position.
 function trackCursor(ta) {
   const save = () => { savedCursor = ta.selectionStart; };
@@ -415,12 +442,7 @@ function insertPredictionText(word) {
   // Expand outward to word boundaries (non-whitespace chars).
   while (start > 0 && /\S/.test(text[start - 1])) start--;
   while (end < text.length && /\S/.test(text[end])) end++;
-  const newText = text.slice(0, start) + word + text.slice(end);
-  ta.value = newText;
-  const newPos = start + word.length;
-  ta.focus();
-  ta.setSelectionRange(newPos, newPos);
-  savedCursor = newPos;
+  setText(ta, text.slice(0, start) + word + text.slice(end), start + word.length);
 }
 
 // Makes each word in the predictions panel individually clickable for insertion into the annotation.
@@ -978,10 +1000,7 @@ function select(idx) {
     btn.onclick = () => {
       const pi = parseInt(btn.dataset.predIndex);
       const pred = (t.predictions && t.predictions[pi]) || {text: t.prediction || ""};
-      ta.value = pred.text || "";
-      ta.focus();
-      savedCursor = ta.value.length;
-      ta.setSelectionRange(savedCursor, savedCursor);
+      setText(ta, pred.text || "", (pred.text || "").length);
     };
   });
   document.getElementById("saveBtn").onclick = () => save(true);
@@ -995,8 +1014,9 @@ function select(idx) {
   if (unsplitBtn) unsplitBtn.onclick = () => unsplitSegment(idx);
 
   // Trigger autocomplete and schedule an autosave on every keystroke.
-  ta.addEventListener("input", () => {
-    normalizeHesitations(ta);
+  ta.addEventListener("input", (e) => {
+    // An undo or redo is taken as it is: re-applying [euh] would cancel the undo.
+    if (!/^history/.test(e.inputType || "")) normalizeHesitations(ta);
     if (syncSpeakers() | syncLanguage(true)) refreshConventionPanel();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
@@ -1193,9 +1213,7 @@ function applySuggestion(word) {
   const after = ta.value.slice(pos);
   const newBefore = before.replace(/(\S+)$/, word);
   const afterTrimmed = after.replace(/^(\S+)/, "");
-  ta.value = newBefore + afterTrimmed;
-  const newPos = newBefore.length;
-  ta.setSelectionRange(newPos, newPos);
+  setText(ta, newBefore + afterTrimmed, newBefore.length);
   closeSuggestions();
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(() => autoSave(), 1500);
@@ -1267,9 +1285,7 @@ function normalizeHesitations(ta) {
   if (!state.conv || !HESITATION_RE.test(ta.value)) return;
   HESITATION_RE.lastIndex = 0;
   const before = ta.value.slice(0, ta.selectionStart).replace(HESITATION_RE, "[euh]");
-  ta.value = before + ta.value.slice(ta.selectionStart).replace(HESITATION_RE, "[euh]");
-  ta.setSelectionRange(before.length, before.length);
-  savedCursor = before.length;
+  setText(ta, before + ta.value.slice(ta.selectionStart).replace(HESITATION_RE, "[euh]"), before.length);
 }
 
 function conventionProblems(text) {
@@ -1473,11 +1489,7 @@ function insertTag(tag) {
     insert = before + tag + after;
     caret = start + insert.length;
   }
-  ta.value = v.slice(0, start) + insert + v.slice(end);
-  ta.focus();
-  ta.setSelectionRange(caret, caret);
-  savedCursor = caret;
-  ta.dispatchEvent(new Event("input"));
+  setText(ta, v.slice(0, start) + insert + v.slice(end), caret);
 }
 
 function toggleFlag(flag, on) {
@@ -1688,17 +1700,13 @@ function applyFix(fix) {
     state.meta.lang = fix.value;
     conventionChanged("lang");
   } else if (fix.type === "replace") {
-    ta.value = ta.value.split(fix.from).join(fix.to);
-    ta.dispatchEvent(new Event("input"));
+    setText(ta, ta.value.split(fix.from).join(fix.to));
   } else if (fix.type === "capitalize") {
-    ta.value = ta.value.replace(/^((?:\s*\[[^\]]*\])*\s*(?:\(\()?)(\p{Ll})/u, (_, pre, c) => pre + c.toUpperCase());
-    ta.dispatchEvent(new Event("input"));
+    setText(ta, ta.value.replace(/^((?:\s*\[[^\]]*\])*\s*(?:\(\()?)(\p{Ll})/u, (_, pre, c) => pre + c.toUpperCase()));
   } else if (fix.type === "sentence_caps") {
-    ta.value = capitalizeSentences(ta.value);
-    ta.dispatchEvent(new Event("input"));
+    setText(ta, capitalizeSentences(ta.value));
   } else if (fix.type === "particle_an") {
-    ta.value = fixParticleAn(ta.value);
-    ta.dispatchEvent(new Event("input"));
+    setText(ta, fixParticleAn(ta.value));
   }
 }
 
@@ -1915,10 +1923,16 @@ document.querySelectorAll(".filter button").forEach(b => {
 document.addEventListener("keydown", (e) => {
   const ta = document.getElementById("annotation");
   if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); save(true); return; }
+  // Ctrl+Y redoes in the text box too (Ctrl+Z and Ctrl+Shift+Z are the browser's own).
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "y" || e.key === "Y") && ta && document.activeElement === ta) {
+    e.preventDefault();
+    document.execCommand("redo");
+    return;
+  }
   if (e.ctrlKey && (e.key === "d" || e.key === "D")) {
     e.preventDefault();
     const cur = taskAt(state.current);
-    if (ta) ta.value = (cur?.predictions?.[0]?.text) || cur?.prediction || "";
+    if (ta) { const text = (cur?.predictions?.[0]?.text) || cur?.prediction || ""; setText(ta, text, text.length); }
     return;
   }
   // Alt+1…n: insert the allowed tags in schema order, then ((mot)).
