@@ -1311,13 +1311,14 @@ function conventionProblems(text) {
 
 // Speaker buttons: the speakers already used in the project (and the current value), then the
 // next new one. Clicking the pre-filled speaker confirms it without retyping.
-// Speaker tag buttons above the text: S1 up to the highest speaker of the project (its saved
-// speakers, this segment's speaker and the tags in its text), plus one for a new voice, at least S1-S3.
+// Speaker tag buttons above the text: the speakers already used in the project (its saved speakers,
+// this segment's speaker and the tags in its text), at least S1 and S2. A new voice
+// (S5) gets its button once it is typed or picked in the Locuteur field.
 function speakerTagIds() {
   const ta = document.getElementById("annotation");
   const names = [...(state.conv?.used_speakers || []), state.meta?.speaker || "", ...speakerTags(ta ? ta.value : "")];
-  const top = Math.max(0, ...names.flatMap(s => (s.match(/\d+/g) || []).map(Number)));
-  return Array.from({ length: Math.max(3, top + 1) }, (_, i) => `S${i + 1}`);
+  const nums = new Set([1, 2, ...names.flatMap(s => (s.match(/\d+/g) || []).map(Number)).filter(n => n > 0)]);
+  return [...nums].sort((a, b) => a - b).map(n => `S${n}`);
 }
 
 function speakerTagButtons() {
@@ -1331,7 +1332,7 @@ function wireTagButtons(root) {
   });
 }
 
-// Adds a button when a new speaker shows up (typed [S5], or S5 picked in the Locuteur field).
+// Adds the button of a new speaker as soon as it shows up (typed [S5], or S5 in the Locuteur field).
 function refreshSpeakerTags() {
   const box = document.getElementById("speakerTagBtns");
   if (!box || box.children.length === speakerTagIds().length) return;
