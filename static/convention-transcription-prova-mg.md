@@ -510,20 +510,22 @@ On coupe une fois, vers 25 à 30 s, sur la pause qui tombe en fin de phrase. Pas
 
 #### Dans l'éditeur Label-in : champs repris du segment précédent
 
-À l'ouverture d'un segment, l'éditeur pré-remplit les champs avec ceux du segment précédent. Trois d'entre eux changent souvent d'un segment à l'autre : ils restent en **jaune, « à confirmer »**, et le segment ne peut pas être validé tant qu'on ne les a pas vérifiés.
+À l'ouverture d'un segment, l'éditeur pré-remplit les champs avec ceux du segment précédent. Deux d'entre eux changent souvent d'un segment à l'autre : ils restent en **jaune, « à confirmer »**, et le segment ne peut pas être validé tant qu'on ne les a pas vérifiés.
 
 | Champ | Repris du segment précédent | À confirmer (jaune) |
 |---|---|---|
 | Locuteur | oui | **oui** |
 | Langue | oui | **oui** |
-| Dialecte | oui | **oui** |
+| Dialecte | oui | non (pour l'instant : un seul dialecte par projet) |
 | Registre | oui | non |
 | Qualité audio | oui | non |
 | Indicateurs | non | — |
 
 Pour confirmer, on clique sur la valeur déjà sélectionnée si elle est juste, ou on en choisit une autre.
 
-**Exemple.** Le segment #12 était `mixte`, `officiel (merina standard)`, `spontané`, `propre`, `S1`. Le #13 s'ouvre avec les mêmes valeurs ; Locuteur, Langue et Dialecte sont en jaune. On écoute : c'est toujours S1, mais il parle uniquement malgache. On clique `S1`, `mg`, puis `officiel (merina standard)`. Registre et Qualité audio restent tels quels.
+Le **dialecte** se choisit une fois (au premier segment du projet) et se reporte ensuite tel quel. Si on entend un autre dialecte, on le change : le nouveau choix se reporte à son tour.
+
+**Exemple.** Le segment #12 était `mixte`, `officiel (merina standard)`, `spontané`, `propre`, `S1`. Le #13 s'ouvre avec les mêmes valeurs ; Locuteur et Langue sont en jaune. On écoute : c'est toujours S1, mais il parle uniquement malgache. On clique `S1` puis `mg`. Dialecte, Registre et Qualité audio restent tels quels.
 
 ### Langue (obligatoire)
 

@@ -723,8 +723,9 @@ def api_split(name: str, idx: int):
 
         annos = load_annotations(project)
         original = annos.pop(audio, None)
-        # Recording-level fields carry over; speaker, language and dialect are judged per part.
-        keep = {k: v for k, v in ((original or {}).get("meta") or {}).items() if k in ("register", "quality")}
+        # Recording-level fields carry over; speaker and language are judged per part. Dialect carries
+        # over too for now (one dialect per project, see RECHECK in the editor).
+        keep = {k: v for k, v in ((original or {}).get("meta") or {}).items() if k in ("register", "quality", "dialect")}
         now = datetime.now(timezone.utc).isoformat()
         for part, text in ((part_a, body.get("text_a")), (part_b, body.get("text_b"))):
             annos[part] = {"audio": part, "text": (text or "").strip(), "status": "autosave", "updated_at": now,

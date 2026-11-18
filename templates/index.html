@@ -1241,7 +1241,9 @@ function learnWords(text) {
 const FIELD_LABELS = { lang: "la langue", dialect: "le dialecte", register: "le registre",
   quality: "la qualité audio", speaker: "le locuteur" };
 const CARRIED = ["lang", "dialect", "register", "quality", "speaker"];
-const RECHECK = ["speaker", "lang", "dialect"];
+// Dialect is not re-checked for now: every project so far is one dialect, picked once and carried
+// on. Put "dialect" back in RECHECK when a project mixes dialects.
+const RECHECK = ["speaker", "lang"];
 
 function prepareMeta(t) {
   const own = t.meta || {};
@@ -1446,7 +1448,7 @@ async function splitSegment(idx) {
       + `Partie 1 (0 – ${at.toFixed(2)} s) : ${short(textA)}\n`
       + `Partie 2 (${at.toFixed(2)} – ${dur.toFixed(2)} s) : ${short(textB)}\n\n`
       + "Le texte est réparti à la position du curseur dans la transcription. "
-      + "Locuteur, langue et dialecte seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
+      + "Locuteur et langue seront à confirmer sur chaque partie. La découpe peut être annulée.")) return;
   const r = await fetch(`/api/projects/${encodeURIComponent(state.project)}/tasks/${idx}/split`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ audio: t.audio, at, text_a: textA, text_b: textB }),
