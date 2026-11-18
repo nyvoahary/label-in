@@ -1017,6 +1017,7 @@ function select(idx) {
   ta.addEventListener("input", (e) => {
     // An undo or redo is taken as it is: re-applying [euh] would cancel the undo.
     if (!/^history/.test(e.inputType || "")) normalizeHesitations(ta);
+    if (e.inputType === "insertText" && e.data === "]") addLeadingSpeakerTyped(ta);
     if (syncSpeakers() | syncLanguage(true)) refreshConventionPanel();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
@@ -1471,6 +1472,27 @@ async function unsplitSegment(idx) {
 // --- Tag bar ----------------------------------------------------------------------------
 // Inserts a tag at the cursor; "(())" wraps the selection as an uncertain word and ticks the
 // matching flag (the convention requires it with ((mot))).
+// A speaker tag put after some untagged text means someone else spoke first: their tag goes at the
+// start too ("… [S2] …" becomes "[S1] … [S2] …"), in the same edit so one Ctrl+Z undoes both. The
+// first speaker is the segment's speaker if it is another one, else S1 (or S2 when S1 was added).
+function leadingSpeakerTag(textBefore, tag) {
+  const id = (tag.match(/^\[(S\d+)\]$/) || [])[1];
+  if (!id || !textBefore.trim() || /\[S\d+\]/.test(textBefore)) return "";
+  const cur = state.meta?.speaker || "";
+  return `[${/^S\d+$/.test(cur) && cur !== id ? cur : id === "S1" ? "S2" : "S1"}] `;
+}
+
+// "[S2]" typed by hand (its "]" just typed) gets the first speaker's tag too.
+function addLeadingSpeakerTyped(ta) {
+  const at = ta.selectionStart, v = ta.value;
+  const typed = v.slice(0, at).match(/\[S\d+\]$/);
+  if (!typed) return;
+  const from = at - typed[0].length, lead = leadingSpeakerTag(v.slice(0, from), typed[0]);
+  if (!lead) return;
+  const head = lead + v.slice(0, from).replace(/^\s+/, "");
+  setText(ta, head + v.slice(from), head.length + typed[0].length);
+}
+
 function insertTag(tag) {
   const ta = document.getElementById("annotation");
   if (!ta) return;
@@ -1491,7 +1513,9 @@ function insertTag(tag) {
     insert = before + tag + after;
     caret = start + insert.length;
   }
-  setText(ta, v.slice(0, start) + insert + v.slice(end), caret);
+  const lead = leadingSpeakerTag(v.slice(0, start), tag);
+  const head = lead ? lead + v.slice(0, start).replace(/^\s+/, "") : v.slice(0, start);
+  setText(ta, head + insert + v.slice(end), caret + head.length - start);
 }
 
 function toggleFlag(flag, on) {

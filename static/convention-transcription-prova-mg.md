@@ -466,10 +466,12 @@ Les balises du texte remplissent le champ Locuteur et l'indicateur à votre plac
 |---|---|---|---|
 | Bouton `[S1]`, puis on écrit | `[S1] Ho avy ve ianao?` | `S1` (à confirmer) | non coché |
 | Bouton `[S2]`, puis on écrit | `… [S2] Eny.` | `S1+S2`, confirmé | **coché automatiquement** |
+| Ou : on écrit d'abord, puis bouton `[S2]` au changement de voix | `Ho avy ve ianao?` → `[S1] Ho avy ve ianao? [S2]` (le `[S1]` du début s'ajoute seul) | `S1+S2`, confirmé | **coché automatiquement** |
 | Bouton `[S1]` à nouveau | `… [S1] Rahoviana?` | `S1+S2` | coché |
 | On supprime `[S2]` (c'était la même voix) | `[S1] Ho avy ve ianao? Eny. [S1] Rahoviana?` | `S1` | coché (une balise reste) |
 | On supprime aussi les `[S1]` | `Ho avy ve ianao? Eny. Rahoviana?` | `S1` | **décoché automatiquement** |
 
+- **La première balise s'ajoute seule.** Une balise de locuteur mise après du texte sans balise ajoute celle du premier locuteur au début : le locuteur du segment s'il est différent, sinon `S1` (ou `S2` si on vient d'ajouter `[S1]`). Un seul Ctrl+Z annule les deux. Ça marche avec les boutons, Alt+chiffre, ou en tapant `[S2]`.
 - **Les balises ont le dernier mot.** Si le texte contient `[S1]` et `[S2]` et qu'on clique sur le bouton `S1` du champ Locuteur, le champ revient à `S1+S2`. Pour revenir à un seul locuteur, on retire les balises du texte. Une petite note sous le champ l'indique : *Suit les balises du texte (règle 8.5)*.
 - **Segment suivant.** Il reprend la **dernière personne qui a parlé**, pas `S1+S2`. Si le segment se termine par `[S1] Rahoviana?`, le suivant s'ouvre avec le locuteur `S1`, à confirmer.
 
