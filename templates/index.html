@@ -930,7 +930,7 @@ function select(idx) {
       ${state.conv.tags.map((tag, i) => `<button type="button" data-tag="${escapeHtml(tag)}" title="Insérer ${escapeHtml(tag)} (Alt+${i + 1})">${escapeHtml(tag)}<kbd>Alt+${i + 1}</kbd></button>`).join("")}
       <button type="button" data-tag="(())" title="Mot entendu mais incertain : entoure la sélection (Alt+${state.conv.tags.length + 1})">((mot))<kbd>Alt+${state.conv.tags.length + 1}</kbd></button>
       <span class="sep"></span>
-      ${["S1", "S2", "S3"].map(s => `<button type="button" data-tag="[${s}]" title="Tour de parole de ${s} (règle 8.5, échange inséparable)">[${s}]</button>`).join("")}
+      <span id="speakerTagBtns">${speakerTagButtons()}</span>
     </div>` : ""}
     <div id="annotationWrap">
       <div id="taHighlights" aria-hidden="true"></div>
@@ -1019,6 +1019,7 @@ function select(idx) {
     if (!/^history/.test(e.inputType || "")) normalizeHesitations(ta);
     if (e.inputType === "insertText" && e.data === "]") addLeadingSpeakerTyped(ta);
     if (syncSpeakers() | syncLanguage(true)) refreshConventionPanel();
+    refreshSpeakerTags();
     scheduleLiveCheck();
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => autoSave(), 1500);
@@ -1310,6 +1311,34 @@ function conventionProblems(text) {
 
 // Speaker buttons: the speakers already used in the project (and the current value), then the
 // next new one. Clicking the pre-filled speaker confirms it without retyping.
+// Speaker tag buttons above the text: S1 up to the highest speaker of the project (its saved
+// speakers, this segment's speaker and the tags in its text), plus one for a new voice, at least S1-S3.
+function speakerTagIds() {
+  const ta = document.getElementById("annotation");
+  const names = [...(state.conv?.used_speakers || []), state.meta?.speaker || "", ...speakerTags(ta ? ta.value : "")];
+  const top = Math.max(0, ...names.flatMap(s => (s.match(/\d+/g) || []).map(Number)));
+  return Array.from({ length: Math.max(3, top + 1) }, (_, i) => `S${i + 1}`);
+}
+
+function speakerTagButtons() {
+  return speakerTagIds().map(s => `<button type="button" data-tag="[${s}]" title="Tour de parole de ${s} (règle 8.5, échange inséparable)">[${s}]</button>`).join("");
+}
+
+function wireTagButtons(root) {
+  root?.querySelectorAll("[data-tag]").forEach(b => {
+    b.onmousedown = e => e.preventDefault();
+    b.onclick = () => insertTag(b.dataset.tag);
+  });
+}
+
+// Adds a button when a new speaker shows up (typed [S5], or S5 picked in the Locuteur field).
+function refreshSpeakerTags() {
+  const box = document.getElementById("speakerTagBtns");
+  if (!box || box.children.length === speakerTagIds().length) return;
+  box.innerHTML = speakerTagButtons();
+  wireTagButtons(box);
+}
+
 function speakerChoices(used, current) {
   const set = new Set([...(used || []), ...(current ? [current] : [])]);
   const nums = [...set].flatMap(s => (s.match(/\d+/g) || []).map(Number));
@@ -1386,6 +1415,7 @@ function conventionChanged(key) {
   if (key === "lang") state.namesAsMg = state.meta.lang === "mg";
   syncSpeakers();
   syncLanguage();
+  refreshSpeakerTags();
   document.getElementById("convErrors").textContent = "";
   document.querySelectorAll(".conv .field.missing").forEach(f => f.classList.remove("missing"));
   refreshConventionPanel();
@@ -1411,10 +1441,7 @@ function wireConventionPanel() {
   });
   document.getElementById("convExcluded").onchange = (e) => { state.excluded = e.target.checked; conventionChanged(); };
   document.getElementById("convReason").onchange = (e) => { state.meta.exclude_reason = e.target.value; conventionChanged(); };
-  document.querySelectorAll("#tagbar [data-tag]").forEach(b => {
-    b.onmousedown = e => e.preventDefault();
-    b.onclick = () => insertTag(b.dataset.tag);
-  });
+  wireTagButtons(document.getElementById("tagbar"));
   refreshConventionPanel();
   runLiveCheck();
 }
