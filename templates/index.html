@@ -1018,6 +1018,7 @@ function select(idx) {
     // An undo or redo is taken as it is: re-applying [euh] would cancel the undo.
     if (!/^history/.test(e.inputType || "")) normalizeHesitations(ta);
     if (e.inputType === "insertText" && e.data === "]") addLeadingSpeakerTyped(ta);
+    if (!/^history/.test(e.inputType || "")) collapseSpaces(ta);
     if (syncSpeakers() | syncLanguage(true)) refreshConventionPanel();
     refreshSpeakerTags();
     scheduleLiveCheck();
@@ -1030,7 +1031,10 @@ function select(idx) {
   ta.addEventListener("scroll", () => { document.getElementById("taHighlights").scrollTop = ta.scrollTop; });
   new ResizeObserver(() => renderHighlights()).observe(ta);
   // Leaving the text box: the last word typed is judged too.
-  ta.addEventListener("blur", () => { if (syncLanguage()) refreshConventionPanel(); });
+  ta.addEventListener("blur", () => {
+    if (/[ \t]$/m.test(ta.value)) setText(ta, ta.value.replace(/[ \t]+$/gm, ""));  // no space at the end
+    if (syncLanguage()) refreshConventionPanel();
+  });
 
   // Handle arrow-key navigation and Enter/Tab/Escape inside the autocomplete suggestion box.
   ta.addEventListener("keydown", (e) => {
@@ -1791,6 +1795,16 @@ function showConventionErrors(errors) {
 }
 
 // Silently saves the current annotation as "autosave" status after a debounce delay.
+// Typing or pasting a second space between words keeps only one, the caret staying in place.
+function collapseSpaces(ta) {
+  if (!/[ \t]{2}/.test(ta.value)) return;
+  const at = ta.selectionStart;
+  const before = ta.value.slice(0, at).replace(/[ \t]{2,}/g, " ");
+  let after = ta.value.slice(at).replace(/[ \t]{2,}/g, " ");
+  if (/[ \t]$/.test(before)) after = after.replace(/^[ \t]/, "");
+  setText(ta, before + after, before.length);
+}
+
 // One space between words (tags leave two), none at the start or end; same as clean_text() on the server.
 const cleanText = t => (t || "").trim().split("\n").map(l => l.replace(/[ \t]+/g, " ").trim()).join("\n");
 
