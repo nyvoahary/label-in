@@ -529,7 +529,7 @@ def api_save(name: str, idx: int):
     if idx < 0 or idx >= len(tasks):
         abort(404)
     payload = request.get_json(force=True) or {}
-    text = (payload.get("text") or "").strip()
+    text = convention.clean_text(payload.get("text") or "")
     status = payload.get("status")
     if status not in ("done", "pending", "review", "autosave", "excluded"):
         status = "done" if text else "pending"
@@ -801,7 +801,7 @@ def api_check(name: str, idx: int):
         abort(404)
     require_segment(project, task_audio(tasks[idx]))
     payload = request.get_json(force=True) or {}
-    text = (payload.get("text") or "").strip()
+    text = convention.clean_text(payload.get("text") or "")
     meta = convention.clean_meta(payload.get("meta"))
     data = tasks[idx].get("data", {})
     duration = (data.get("end") or 0) - (data.get("start") or 0) if data.get("end") is not None else None

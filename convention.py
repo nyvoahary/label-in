@@ -107,6 +107,11 @@ def problems(status: str, text: str, meta: dict) -> list[str]:
     return out + [e["msg"] for e in text_errors(text, meta)]
 
 
+def clean_text(text: str) -> str:
+    """Spaces as saved: one between words (tags leave two), none at the start or end of a line."""
+    return "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in (text or "").strip().split("\n"))
+
+
 def _issue(msg: str, fix: dict | None = None, words: list[str] | None = None) -> dict:
     """words: the words the issue is about, highlighted in the editor's text box."""
     out = {"msg": msg}

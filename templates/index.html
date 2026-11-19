@@ -1791,10 +1791,13 @@ function showConventionErrors(errors) {
 }
 
 // Silently saves the current annotation as "autosave" status after a debounce delay.
+// One space between words (tags leave two), none at the start or end; same as clean_text() on the server.
+const cleanText = t => (t || "").trim().split("\n").map(l => l.replace(/[ \t]+/g, " ").trim()).join("\n");
+
 async function autoSave() {
   const ta = document.getElementById("annotation");
   if (!ta) return;
-  const text = ta.value.trim();
+  const text = cleanText(ta.value);  // the box itself is left alone while typing
   const status = "autosave";
   const idx = state.current;
   if (state.saveController) state.saveController.abort();
@@ -1832,7 +1835,8 @@ async function save(advance, statusOverride) {
   clearTimeout(state.saveTimer);
   const ta = document.getElementById("annotation");
   if (!ta) return;
-  const text = ta.value.trim();
+  if (cleanText(ta.value) !== ta.value) setText(ta, cleanText(ta.value));  // one undoable step
+  const text = ta.value;
   const status = statusOverride || (state.excluded ? "excluded" : text || state.conv ? "done" : "pending");
   const idx = state.current;
   if (state.conv && (status === "done" || status === "excluded")) {
